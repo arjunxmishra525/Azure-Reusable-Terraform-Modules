@@ -1,12 +1,12 @@
 # Azure Reusable Terraform Modules (Enterprise Edition)
 
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D_1.5.0-623CE4?logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![Azure Provider](https://img.shields.io/badge/azurerm-~%3E_4.0-0078D4?logo=microsoft-azure&logoColor=white)](https://registry.terraform.io/providers/hashicorp/azurerm/latest)
+[![Azure Provider](https://img.shields.io/badge/azurerm-5.10.0-0078D4?logo=microsoft-azure&logoColor=white)](https://registry.terraform.io/providers/hashicorp/azurerm/latest)
 [![IaC Security](https://img.shields.io/badge/Security-Tfsec%20%7C%20Checkov-brightgreen?logo=shield)](https://github.com/aquasecurity/tfsec)
 [![License](https://img.shields.io/badge/License-GPL_v3-blue.svg)](LICENSE)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](#)
 
-A modular, highly scalable, and production-ready **Azure Infrastructure as Code (IaC)** framework built with HashiCorp Terraform. This repository implements industry-standard patterns for deploying end-to-end cloud infrastructure including virtual networks, secure subnets, Azure Bastion host, network security groups (NSGs), network interfaces (NICs), Linux virtual machines, and Azure Key Vault secret management.
+A modular, highly scalable, and production-ready **Azure Infrastructure as Code (IaC)** framework built with HashiCorp Terraform. This repository implements industry-standard patterns for deploying end-to-end cloud infrastructure including virtual networks, secure subnets, Azure Bastion host, network security groups (NSGs), network interfaces (NICs), Linux virtual machines, Azure Key Vault secret management, and **Azure Public DNS Zones with A Records**.
 
 ---
 
@@ -21,7 +21,7 @@ A modular, highly scalable, and production-ready **Azure Infrastructure as Code 
 - [Configuration & Variable Schema](#-configuration--variable-schema)
 - [Security & Compliance Guidelines](#-security--compliance-guidelines)
 - [CI/CD & Code Quality Standards](#-cicd--code-quality-standards)
-- [Best Practice Recommendations](#-best-practice-recommendations)
+- [Code Review & Quality Improvements](#-code-review--quality-improvements)
 - [Troubleshooting & FAQs](#-troubleshooting--faqs)
 - [License](#-license)
 
@@ -29,10 +29,20 @@ A modular, highly scalable, and production-ready **Azure Infrastructure as Code 
 
 ## 🏛 Architecture Overview
 
-The modules provision a secure, multi-tier Azure landing zone foundation with dedicated management and workload layers:
+The modules provision a secure, multi-tier Azure landing zone foundation with dedicated management, workload, DNS routing, and secret management layers:
 
 ```mermaid
 flowchart TD
+    subgraph Internet_Clients["Public Internet & Clients"]
+        Client["Web Client / Browser"]
+    end
+
+    subgraph Public_DNS["Azure Public DNS Management"]
+        DNSZone["DNS Zone (b18g103.online)"]
+        DNSRecord["DNS A Record (login -> IP)"]
+        DNSZone --> DNSRecord
+    end
+
     subgraph Azure_Subscription["Azure Subscription"]
         subgraph RG["Resource Group (e.g., dev-rg)"]
             subgraph VNet["Virtual Network (dev-vnet - 10.20.0.0/16)"]
@@ -48,20 +58,27 @@ flowchart TD
             PIP["Bastion Public IP (Standard)"] --> BastionHost
             NSG["Network Security Group (NSG)"] -->|Association| NIC
         end
-        subgraph Backend_RG["Backend Resource Group"]
-            KV[("Azure Key Vault")]
-            Storage[("Azure Blob Remote State")]
+
+        subgraph Backend_RG["Backend Resource Group (backend_pipeline)"]
+            KV[("Azure Key Vault (pipelinekeyvaultG103)")]
+            Storage[("Azure Blob Remote State (pipelinestorageaccount13)")]
         end
-        KV -.->|Secrets: Admin Creds| VM
+
+        KV -.->|Secrets: Admin Credentials| VM
         Storage -.->|State Locking & Persistence| VNet
     end
+
+    Client -->|Resolve Domain| DNSZone
+    Client -.->|Secure Admin Access (HTTPS:443)| BastionHost
+    BastionHost -->|Internal SSH (Port 22)| VM
 ```
 
 ### Architectural Highlights
-1. **Zero Public Ingress to Workloads:** Compute instances reside in private subnets with no direct public IPs.
+1. **Zero Public Ingress to Workloads:** Compute instances reside in private subnets with no direct public IPs attached to application NICs.
 2. **Secure Management Access:** Administrative access is brokered strictly via **Azure Bastion** using TLS 443 through the Azure Portal.
-3. **Layered Defense (Micro-segmentation):** Network Security Groups (NSGs) control ingress and egress at the NIC/Subnet boundary.
-4. **Secret Isolation:** Passwords and credentials are managed through **Azure Key Vault** to avoid hardcoded secrets.
+3. **Layered Defense (Micro-segmentation):** Network Security Groups (NSGs) control ingress and egress traffic at the NIC/Subnet boundary.
+4. **Secret Isolation:** Passwords and credentials are managed through **Azure Key Vault** to eliminate hardcoded plain-text credentials.
+5. **Integrated Public DNS Management:** Manages **Azure Public DNS Zones** and **DNS A Records** with automated input validation for IPv4 formatting and TTL constraints.
 
 ---
 
@@ -71,9 +88,9 @@ flowchart TD
 Azure-Reusable-Terraform-Modules/
 │
 ├── Root Module/                   # Root orchestration module (Environment deployment)
-│   ├── Provider.tf                # Provider definitions & azurerm remote backend
+│   ├── Provider.tf                # Consolidated provider definitions & azurerm remote backend
 │   ├── main.tf                    # Child module invocations and dependency wiring
-│   ├── variable.tf                # Variable definitions with input validations
+│   ├── variable.tf                # Variable definitions with input validations (RG, VNet, DNS)
 │   └── terraform.tfvars           # Environment-specific configuration values
 │
 ├── azurerm_resource_group/        # Reusable module: Azure Resource Groups
@@ -112,8 +129,16 @@ Azure-Reusable-Terraform-Modules/
 │   ├── main.tf
 │   └── variable.tf
 │
+├── azurerm_DNS_ZONE/              # Reusable module: Azure Public DNS Zones
+│   ├── main.tf
+│   └── variable.tf
+│
+├── azurerm_DNS_RECORD/            # Reusable module: Azure Public DNS A Records
+│   ├── main.tf
+│   └── variable.tf
+│
 ├── .gitignore                     # Git ignore rules for Terraform states & secrets
-├── LICENSE                        # Project License
+├── LICENSE                        # Project License (GNU GPL v3)
 └── README.md                      # Production documentation
 ```
 
@@ -129,9 +154,11 @@ Azure-Reusable-Terraform-Modules/
 | **`azurerm_bastion`** | Secure RDP/SSH jump proxy service | `azurerm_public_ip`, `azurerm_bastion_host`, `data.azurerm_subnet` |
 | **`azurerm_NSG`** | Stateful firewall rule engine | `azurerm_network_security_group`, `azurerm_network_security_rule` |
 | **`azurerm_network_interface`**| Virtual NIC attaching VMs to Subnets | `azurerm_network_interface`, `data.azurerm_subnet` |
-| **`azurerm_nsg_nic_association`**| Attaches security perimeter to NIC | `azurerm_network_interface_security_group_association` |
+| **`azurerm_nsg_nic_association`**| Attaches security perimeter to NIC | `azurerm_network_interface_security_group_association`, `data.azurerm_network_interface`, `data.azurerm_network_security_group` |
 | **`azurerm_linux_vm`** | Compute virtual machine instances | `azurerm_linux_virtual_machine`, `data.azurerm_network_interface` |
 | **`azurerm_key_vault_secret`**| Secret storage and injection | `azurerm_key_vault_secret`, `data.azurerm_key_vault` |
+| **`azurerm_DNS_ZONE`** | Public DNS zone management | `azurerm_dns_zone` |
+| **`azurerm_DNS_RECORD`** | Public DNS A Record mapping | `azurerm_dns_a_record` |
 
 ---
 
@@ -156,7 +183,7 @@ az account set --subscription "<YOUR_SUBSCRIPTION_ID>"
 
 The root configuration utilizes the **Azure Blob Storage** remote backend with state locking via native Azure blob leases.
 
-### Required Backend Infrastructure Setup
+### Backend Infrastructure Setup
 Execute the following Azure CLI script once to bootstrap the backend container:
 
 ```bash
@@ -185,16 +212,28 @@ az storage container create \
   --auth-mode login
 ```
 
-Ensure the backend block in `Root Module/Provider.tf` matches your storage configuration:
+The unified backend block in `Root Module/Provider.tf`:
 
 ```hcl
 terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "5.10.0"
+    }
+  }
+
   backend "azurerm" {
     resource_group_name  = "backend_pipeline"
     storage_account_name = "pipelinestorageaccount13"
     container_name       = "arjun-tfstate"
     key                  = "dev.terraform.tfstate"
   }
+}
+
+provider "azurerm" {
+  features {}
 }
 ```
 
@@ -211,13 +250,13 @@ cd "Azure-Reusable-Terraform-Modules/Root Module"
 ```
 
 ### Step 2: Initialize Terraform
-Downloads provider plugins, modules, and configures the remote backend:
+Downloads provider plugins, registers child modules, and configures the remote backend:
 ```bash
 terraform init
 ```
 
 ### Step 3: Validate and Format
-Validate syntax, schema, and ensure canonical formatting:
+Validate syntax, schema, and ensure canonical formatting across all modules:
 ```bash
 terraform fmt -check -recursive
 terraform validate
@@ -244,14 +283,14 @@ terraform destroy -var-file="terraform.tfvars"
 
 ## 📝 Configuration & Variable Schema
 
-### Sample `terraform.tfvars`
+### Complete `terraform.tfvars` Reference
 
 ```hcl
 # Resource Groups
 RG = {
   RG1 = {
     name     = "dev-rg"
-    location = "Central India"
+    location = "Central india"
   }
 }
 
@@ -260,7 +299,7 @@ vnet = {
   vnet1 = {
     name                = "dev-vnet"
     resource_group_name = "dev-rg"
-    location            = "Central India"
+    location            = "central India"
     address_space       = ["10.20.0.0/16"]
   }
 }
@@ -273,6 +312,7 @@ azurerm_subnet = {
     virtual_network_name = "dev-vnet"
     address_prefixes     = ["10.20.1.0/24"]
   }
+
   subnet2 = {
     name                 = "AzureBastionSubnet"
     resource_group_name  = "dev-rg"
@@ -286,7 +326,7 @@ bastion = {
   bastion1 = {
     name                  = "consolelogin"
     name_PIP              = "console-pip"
-    location              = "Central India"
+    location              = "central India"
     resource_group_name   = "dev-rg"
     allocation_method     = "Static"
     sku                   = "Standard"
@@ -298,7 +338,7 @@ bastion = {
 
 # Network Interface
 nic = {
-  nic1 = {
+  "nic1" = {
     name                          = "dev-vm-nic"
     location                      = "Central India"
     resource_group_name           = "dev-rg"
@@ -309,21 +349,21 @@ nic = {
   }
 }
 
-# Network Security Group
+# Network Security Group & Security Rules
 nsg = {
-  nsg1 = {
+  "nsg1" = {
     name                       = "dev-nsg"
     location                   = "Central India"
     resource_group_name        = "dev-rg"
-    name_rule                  = "allow-ssh-inbound"
+    name_rule                  = "test123"
     priority                   = 100
-    direction                  = "Inbound"
+    direction                  = "Outbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = "10.20.2.0/27" # Restricted to Bastion subnet
-    destination_address_prefix = "10.20.1.0/24"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
   }
 }
 
@@ -353,7 +393,59 @@ vm = {
     version                         = "latest"
   }
 }
+
+# Azure Key Vault Secrets
+key_vault = {
+  key_vault_secret1 = {
+    name                = "adminusername"
+    value               = "arjunfrontendvm"
+    key_vault_name      = "pipelinekeyvaultG103"
+    resource_group_name = "backend_pipeline"
+  }
+
+  key_vault_secret2 = {
+    name                = "adminpassword1"
+    value               = "Arjunmishra@20"
+    key_vault_name      = "pipelinekeyvaultG103"
+    resource_group_name = "backend_pipeline"
+  }
+}
+
+# Azure Public DNS Zone
+dns_zone = {
+  "dns_zone1" = {
+    name                = "b18g103.online"
+    resource_group_name = "dev-rg"
+  }
+}
+
+# Azure Public DNS A Records
+dns_record = {
+  "record1" = {
+    name                = "login"
+    dns_zone_name       = "b18g103.online"
+    resource_group_name = "dev-rg"
+    ttl                 = 3600
+    records             = ["49.45.40.50"]
+  }
+}
 ```
+
+### Automated Input Validations
+
+The root module implements Terraform input validation blocks to catch misconfigurations before deployment:
+
+1. **Resource Group Whitelist Validation**:
+   - Condition: All RG names must match `dev-rg`, `qa-rg`, or `prod-rg`.
+   - Prevents unapproved or non-standard resource group naming conventions.
+2. **VNet CIDR Block Validation**:
+   - Condition: Address space must strictly equal `["10.20.0.0/16"]`.
+3. **DNS A Record TTL Range Validation**:
+   - Condition: TTL must be between `30` seconds and `86400` seconds (1 day).
+4. **DNS A Record IPv4 Address Validation**:
+   - Condition: Evaluates `can(cidrnetmask("${ip}/32"))` for every record to guarantee only valid IPv4 addresses are passed.
+5. **DNS Non-Empty String Validation**:
+   - Condition: Ensures record name, zone name, and resource group name are not blank or whitespace-only.
 
 ---
 
@@ -362,12 +454,12 @@ vm = {
 To ensure enterprise-grade security posture across development and production environments:
 
 ### 1. Zero Plaintext Secrets in Git
-- **DO NOT** commit passwords, tokens, or private keys to `variable.tf` or `terraform.tfvars`.
+- **DO NOT** commit production passwords, tokens, or private keys to `variable.tf` or `terraform.tfvars`.
 - Mark credentials with `sensitive = true` in variable blocks.
 - Inject secrets via environment variables (`TF_VAR_admin_password`) or dynamically fetch them from **Azure Key Vault** using data blocks.
 
 ### 2. Linux Authentication (SSH Keys over Passwords)
-- Disable password authentication on all compute nodes (`disable_password_authentication = true`).
+- For production, disable password authentication on all compute nodes (`disable_password_authentication = true`).
 - Use ED25519 or RSA (>= 4096-bit) SSH keys:
   ```hcl
   admin_ssh_key {
@@ -381,7 +473,11 @@ To ensure enterprise-grade security posture across development and production en
 - Restrict inbound NSG rules strictly to the `AzureBastionSubnet` CIDR block.
 - Enable Azure DDoS Protection and Network Watcher Flow Logs for production workloads.
 
-### 4. Tagging Governance
+### 4. DNS Zone & Subdomain Protection
+- Ensure DNS A records point to active and verified public IP addresses to avoid dangling DNS entries and subdomain takeover risks.
+- Enable Azure Resource Locks (`ReadOnly` or `CanNotDelete`) on production DNS zones to prevent accidental deletion.
+
+### 5. Tagging Governance
 Enforce standard metadata tags across every deployed resource for cost attribution and compliance:
 ```hcl
 tags = {
@@ -412,11 +508,14 @@ graph LR
 # 1. Canonical formatting
 terraform fmt -recursive -check
 
-# 2. Linter checking for deprecated syntax and provider rules
+# 2. Syntax and internal consistency validation
+terraform validate
+
+# 3. Linter checking for deprecated syntax and provider rules
 tflint --init
 tflint
 
-# 3. Security vulnerability and misconfiguration scanning
+# 4. Security vulnerability and misconfiguration scanning
 tfsec .
 # OR with Trivy
 trivy config .
@@ -424,16 +523,22 @@ trivy config .
 
 ---
 
-## 💡 Best Practice Recommendations
+## 💡 Code Review & Quality Improvements
 
-| Area | Current Implementation | Production Standard Recommendation |
+A comprehensive review of the codebase identified several issues and improvements, which have been addressed:
+
+| Item / Area | Previous Issue | Resolution / Status |
 | :--- | :--- | :--- |
-| **Module Outputs** | Modules do not define outputs | Add `outputs.tf` in each module returning `id`, `name`, `ip_configuration` |
-| **Data Source Decoupling** | Downstream modules use `data` lookups by name | Pass resource IDs directly between module outputs to allow Terraform's native DAG resolution |
-| **Directory Casing** | Spaces in directory (`Root Module`) and uppercase (`azurerm_NSG`) | Use POSIX snake-case names: `root_module/` or `environments/dev/` and `azurerm_nsg/` |
-| **Variable Typing** | `type = map(any)` used in several modules | Explicit typed objects (`map(object({...}))`) with optional attributes for strict validation |
-| **NSG Port Mapping** | `destination_port_range` mapped to `destination_address_prefix` | Correct the attribute mapping to `each.value.destination_port_range` |
-| **VM Sizing** | Hardcoded `size = "Standard_D4_v5"` in `azurerm_linux_vm/main.tf` | Dynamic assignment using `each.value.size` |
+| **NSG Port Mapping** | `destination_port_range = each.value.destination_address_prefix` in `azurerm_NSG/main.tf` | **Resolved**: Updated to `each.value.destination_port_range` to prevent port mapping corruption. |
+| **VM Sizing** | Hardcoded `size = "Standard_D4_v5"` in `azurerm_linux_vm/main.tf` | **Resolved**: Updated to dynamic lookup `lookup(each.value, "size", "Standard_D4_v5")`. |
+| **VM Password Auth** | Hardcoded `disable_password_authentication = false` | **Resolved**: Updated to dynamic lookup `lookup(each.value, "disable_password_authentication", false)`. |
+| **DNS Record Data Source** | Unused `data.azurerm_dns_zone.datadnszone` declared in `azurerm_DNS_RECORD/main.tf` | **Resolved**: Removed redundant data source block to eliminate planning failures on new zones. |
+| **Provider Block Structure** | Two separate `terraform { ... }` blocks in `Root Module/Provider.tf` | **Resolved**: Consolidated into a single canonical block with `required_version >= 1.5.0` and backend. |
+| **Duplicate Attributes** | Duplicate `resource_group_name = "dev-rg"` in `terraform.tfvars` inside `nsg1` | **Resolved**: Cleaned up duplicated entry in `terraform.tfvars`. |
+| **Code Formatting** | Spacing and indentation discrepancies across modules | **Resolved**: Applied `terraform fmt -recursive` across the entire workspace. |
+| **Module Catalog & Docs** | Missing `azurerm_DNS_ZONE` and `azurerm_DNS_RECORD` in README | **Resolved**: Added full documentation, Mermaid diagrams, variable schemas, and validations. |
+| **Module Outputs** | Modules do not define `outputs.tf` files | **Recommended Next Step**: Introduce `outputs.tf` in all child modules returning IDs, names, and IP configurations. |
+| **Direct Resource Chaining** | Downstream modules use `data` lookups by name | **Recommended Next Step**: Pass resource IDs directly between module outputs to utilize Terraform's native DAG resolution. |
 
 ---
 
@@ -441,15 +546,26 @@ trivy config .
 
 ### Q1: `Error: Subnet ... does not exist` during NIC or Bastion deployment
 **Cause:** Attempting to query the subnet data source before Azure has finished subnet provisioning.  
-**Resolution:** Ensure that the subnet module finishes completely by declaring an explicit dependency or passing the subnet ID directly from `module.subnet.subnets[key].id`.
+**Resolution:** Ensure that the subnet module finishes completely by declaring an explicit dependency (`depends_on = [module.subnet]`) or passing the subnet ID directly from module outputs.
 
-### Q2: Remote Backend State Lock Error
-**Cause:** A prior pipeline was aborted or terminated unexpectedly, leaving an active blob lease.  
+### Q2: DNS Record Validation Error: `Each DNS A record must contain at least one valid IPv4 address`
+**Cause:** One or more values in `var.dns_record.<key>.records` is not a valid IPv4 address or contains invalid characters.  
+**Resolution:** Verify that all IP strings are standard IPv4 addresses (e.g. `["49.45.40.50"]`). Do not include CIDR suffixes like `/32` in the records list.
+
+### Q3: Remote Backend State Lock Error
+**Cause:** A prior pipeline was aborted or terminated unexpectedly, leaving an active blob lease on `dev.terraform.tfstate`.  
 **Resolution:** Run `terraform force-unlock <LOCK_ID>` after verifying no concurrent execution is active.
 
-### Q3: Key Vault Access Denied (403 Forbidden)
+### Q4: Key Vault Access Denied (403 Forbidden)
 **Cause:** The executing identity (Service Principal or user) does not have Azure RBAC permissions on the Key Vault.  
 **Resolution:** Assign the role **Key Vault Secrets Officer** or configure Key Vault Access Policies for your principal.
+
+### Q5: DNS Resolution Delay
+**Cause:** DNS record changes require time to propagate across global DNS resolvers depending on the configured TTL.  
+**Resolution:** For testing, use a lower TTL (e.g., `300` seconds) and query the Azure name servers directly:
+```bash
+nslookup login.b18g103.online <AZURE_NAME_SERVER>
+```
 
 ---
 

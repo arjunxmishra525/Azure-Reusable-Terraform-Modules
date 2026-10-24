@@ -72,9 +72,6 @@ nsg = {
     destination_port_range     = "*"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
-    resource_group_name        = "dev-rg"
-
-
   }
 }
 nsg_nic = {
@@ -130,7 +127,7 @@ dns_zone = {
 dns_record = {
   "record1" = {
     name                = "login"
-    dns_zone_name           = "b18g103.online"
+    dns_zone_name       = "b18g103.online"
     resource_group_name = "dev-rg"
     ttl                 = 3600
     records             = ["49.45.40.50"]

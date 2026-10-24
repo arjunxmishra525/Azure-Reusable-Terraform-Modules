@@ -1,5 +1,5 @@
 variable "vm" {
-   type = map(any)
+  type = map(any)
 }
 
 variable "admin_username" {
