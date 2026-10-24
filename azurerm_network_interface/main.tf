@@ -1,4 +1,4 @@
-data "azurerm_subnet" "data-nic-subnet" {
+data "azurerm_subnet" "subnet" {
   for_each = var.nic
   name                 = each.value.data_subnet
   virtual_network_name = each.value.virtual_network_name
@@ -13,7 +13,7 @@ resource "azurerm_network_interface" "nic-vm" {
 
   ip_configuration {
     name                          = each.value.name_ip_config
-    subnet_id                     = data.azurerm_subnet.data-nic-subnet[each.key].id
+    subnet_id                     = data.azurerm_subnet.subnet[each.key].id
     private_ip_address_allocation = each.value.private_ip_address_allocation
   }
 }
