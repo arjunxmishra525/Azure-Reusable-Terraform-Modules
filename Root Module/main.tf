@@ -22,7 +22,18 @@ bastion = var.bastion
 }
 
 module "nic_card" {
-  depends_on = [ var.azurerm_subnet ]
+  depends_on = [ module.subnet ]
 source = "../azurerm_network_interface" 
 nic = var.nic 
+}
+
+module "network_security_group" {
+  source = "../azurerm_NSG"
+  nsg = var.nsg
+}
+
+module "nsg_nic_association" {
+  depends_on = [ module.nic_card,module.network_security_group ]
+  source = "../azurerm_nsg_nic_association"
+  nsg_nic = var.nsg_nic
 }

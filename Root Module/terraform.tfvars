@@ -15,7 +15,7 @@ vnet = {
 }
 
 azurerm_subnet = {
-  "subnet1" = {
+  subnet1 = {
     name                 = "Dev-Frontend-Subnet"
     resource_group_name  = "dev-rg"
     virtual_network_name = "dev-vnet"
@@ -54,5 +54,33 @@ nic = {
   private_ip_address_allocation = "Dynamic"
   data_subnet = "Dev-Frontend-Subnet"
   virtual_network_name = "dev-vnet"
+  }
+}
+
+
+nsg = {
+  "nsg1" = {
+    name                = "dev-nsg"
+    location            = "Central India"
+    resource_group_name = "dev-rg"
+    name_rule                        = "test123"
+    priority                    = 100
+    direction                   = "Outbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "*"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = "dev-rg"
+  
+  
+  }
+}
+nsg_nic = {
+  nsg_nic1={
+    nic_name="dev-vm-nic"
+    resource_group_name         = "dev-rg"
+    nsg_name= "dev-nsg"
   }
 }
