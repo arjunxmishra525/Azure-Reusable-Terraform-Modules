@@ -32,55 +32,91 @@ azurerm_subnet = {
 }
 
 bastion = {
-  bastion1={
-    name = "consolelogin"
-     name_PIP="console-pip"
-     location = "central India"
-     resource_group_name=  "dev-rg"
-     allocation_method   = "Static"
-     sku = "Standard"
-     name_ip_configuration = "configuration"  
-     data_subnet= "AzureBastionSubnet"               
-     virtual_network_name = "dev-vnet"
+  bastion1 = {
+    name                  = "consolelogin"
+    name_PIP              = "console-pip"
+    location              = "central India"
+    resource_group_name   = "dev-rg"
+    allocation_method     = "Static"
+    sku                   = "Standard"
+    name_ip_configuration = "configuration"
+    data_subnet           = "AzureBastionSubnet"
+    virtual_network_name  = "dev-vnet"
   }
 }
 
 nic = {
   "nic1" = {
-    name = "dev-vm-nic"
-    location = "Central India"
-  resource_group_name = "dev-rg"
-  name_ip_config = "internal"
-  private_ip_address_allocation = "Dynamic"
-  data_subnet = "Dev-Frontend-Subnet"
-  virtual_network_name = "dev-vnet"
+    name                          = "dev-vm-nic"
+    location                      = "Central India"
+    resource_group_name           = "dev-rg"
+    name_ip_config                = "internal"
+    private_ip_address_allocation = "Dynamic"
+    data_subnet                   = "Dev-Frontend-Subnet"
+    virtual_network_name          = "dev-vnet"
   }
 }
 
 
 nsg = {
   "nsg1" = {
-    name                = "dev-nsg"
-    location            = "Central India"
-    resource_group_name = "dev-rg"
-    name_rule                        = "test123"
-    priority                    = 100
-    direction                   = "Outbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "*"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = "dev-rg"
-  
-  
+    name                       = "dev-nsg"
+    location                   = "Central India"
+    resource_group_name        = "dev-rg"
+    name_rule                  = "test123"
+    priority                   = 100
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+    resource_group_name        = "dev-rg"
+
+
   }
 }
 nsg_nic = {
-  nsg_nic1={
-    nic_name="dev-vm-nic"
-    resource_group_name         = "dev-rg"
-    nsg_name= "dev-nsg"
+  nsg_nic1 = {
+    nic_name            = "dev-vm-nic"
+    resource_group_name = "dev-rg"
+    nsg_name            = "dev-nsg"
   }
 }
+
+vm = {
+  vm1 = {
+    nic_name                        = "dev-vm-nic"
+    name                            = "frontendvirtualmachine"
+    resource_group_name             = "dev-rg"
+    size                            = "Standard_D4_v5"
+    location                        = "Central India"
+    disable_password_authentication = false
+    caching                         = "ReadWrite"
+    storage_account_type            = "Standard_LRS"
+    publisher                       = "Canonical"
+    offer                           = "0001-com-ubuntu-server-jammy"
+    source_image_reference_sku      = "22_04-lts"
+    version                         = "latest"
+
+  }
+}
+
+key_vault = {
+  key_vault_secret1 = {
+    name                = "adminusername"
+    value               = "arjunfrontendvm"
+    key_vault_name      = "pipelinekeyvaultG103"
+    resource_group_name = "backend_pipeline"
+
+  }
+
+  key_vault_secret2 = {
+    name                = "adminpassword1"
+    value               = "Arjunmishra@20"
+    key_vault_name      = "pipelinekeyvaultG103"
+    resource_group_name = "backend_pipeline"
+  }
+}
+

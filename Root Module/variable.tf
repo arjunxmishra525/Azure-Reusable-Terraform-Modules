@@ -78,3 +78,22 @@ variable "nsg" {
 variable "nsg_nic" {
   type = map(any)
 }
+
+variable "vm" {
+  type = map(any)
+}
+
+variable "admin_username" {
+  type = string
+  default = "arjunmishra"
+}
+variable "admin_password" {
+  type = string
+  # sensitive = true
+  default = "Arjunmishra@20"
+}
+
+variable "key_vault" {
+  type = map(any)
+}
+

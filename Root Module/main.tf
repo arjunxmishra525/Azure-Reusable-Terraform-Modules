@@ -28,6 +28,7 @@ nic = var.nic
 }
 
 module "network_security_group" {
+  depends_on = [ module.resource_group ]
   source = "../azurerm_NSG"
   nsg = var.nsg
 }
@@ -36,4 +37,19 @@ module "nsg_nic_association" {
   depends_on = [ module.nic_card,module.network_security_group ]
   source = "../azurerm_nsg_nic_association"
   nsg_nic = var.nsg_nic
+}
+
+
+module "azurerm_linux_virtual_machine" {
+  depends_on = [ module.nic_card,module.subnet ]
+  source = "../azurerm_linux_vm"
+  vm = var.vm
+  admin_password = var.admin_password
+  admin_username = var.admin_username
+}
+
+module "key_vault" {
+    source = "../azurerm_key_vault_secret"
+  key_vault = var.key_vault
+
 }
