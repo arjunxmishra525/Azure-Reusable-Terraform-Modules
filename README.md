@@ -404,8 +404,8 @@ key_vault = {
   }
 
   key_vault_secret2 = {
-    name                = "adminpassword1"
-    value               = "Arjunmishra@20"
+    name                = "adminpassword"
+    value               = var.admin_password # Supply securely; never hardcode or commit a real password
     key_vault_name      = "pipelinekeyvaultG103"
     resource_group_name = "backend_pipeline"
   }
@@ -423,10 +423,10 @@ dns_zone = {
 dns_record = {
   "record1" = {
     name                = "login"
-    dns_zone_name       = "b18g103.online"
+    zone_name           = "b18g103.online"
     resource_group_name = "dev-rg"
     ttl                 = 3600
-    records             = ["49.45.40.50"]
+    records             = ["203.0.113.10"] # Documentation-only TEST-NET IP; replace with your real public IP.
   }
 }
 ```
@@ -523,7 +523,7 @@ trivy config .
 
 ### Azure DevOps Pipeline Integration (`azure-pipelines.yml`)
 
-The repository supports automated multi-environment deployments (`dev`, `qa`, `prod`) using Azure DevOps YAML pipelines. The `ApplyInfrastructure` deployment job binds to Azure DevOps **Environments** for audit tracking, security gates, and approval workflows:
+The following is an illustrative pipeline pattern for `dev`, `qa`, and `prod`. Before production use, configure service-connection authentication, environment approvals/checks, separate state keys per environment, and a reviewed plan artifact. Do not use `terraform apply -auto-approve` for production without an enforced approval gate:
 
 ```yaml
 trigger:
@@ -598,7 +598,7 @@ A comprehensive review of the codebase identified several issues and improvement
 | **NSG Port Mapping** | `destination_port_range = each.value.destination_address_prefix` in `azurerm_NSG/main.tf` | **Resolved**: Updated to `each.value.destination_port_range` to prevent port mapping corruption. |
 | **VM Sizing** | Hardcoded `size = "Standard_D4_v5"` in `azurerm_linux_vm/main.tf` | **Resolved**: Updated to dynamic lookup `lookup(each.value, "size", "Standard_D4_v5")`. |
 | **VM Password Auth** | Hardcoded `disable_password_authentication = false` | **Resolved**: Updated to dynamic lookup `lookup(each.value, "disable_password_authentication", false)`. |
-| **DNS Record Data Source** | Unused `data.azurerm_dns_zone.datadnszone` declared in `azurerm_DNS_RECORD/main.tf` | **Resolved**: Removed redundant data source block to eliminate planning failures on new zones. |
+| **DNS Record Data Source / Invalid Index** | A single data source was referenced as `data.azurerm_dns_zone.datadnszone[each.key]`, or a lookup was attempted before a zone created in the same deployment existed. | **Guidance added below**: Use `each.value.zone_name` when the zone is managed by this Terraform deployment; use a `for_each` data source only when looking up pre-existing zones. |
 | **Provider Block Structure** | Two separate `terraform { ... }` blocks in `Root Module/Provider.tf` | **Resolved**: Consolidated into a single canonical block with `required_version >= 1.5.0` and backend. |
 | **Duplicate Attributes** | Duplicate `resource_group_name = "dev-rg"` in `terraform.tfvars` inside `nsg1` | **Resolved**: Cleaned up duplicated entry in `terraform.tfvars`. |
 | **Code Formatting** | Spacing and indentation discrepancies across modules | **Resolved**: Applied `terraform fmt -recursive` across the entire workspace. |
@@ -618,22 +618,68 @@ A comprehensive review of the codebase identified several issues and improvement
 **Cause:** One or more values in `var.dns_record.<key>.records` is not a valid IPv4 address or contains invalid characters.  
 **Resolution:** Verify that all IP strings are standard IPv4 addresses (e.g. `["49.45.40.50"]`). Do not include CIDR suffixes like `/32` in the records list.
 
-### Q3: Remote Backend State Lock Error
+### Q3: DNS A record error: `Invalid index` on `data.azurerm_dns_zone.datadnszone[each.key]`
+
+**Cause:** `data.azurerm_dns_zone.datadnszone` is a single data-source instance, but `[each.key]` treats it as a map. Also, a data source cannot find a DNS zone that is being created in the same apply unless the dependency and lookup design support that workflow.
+
+**Recommended fix when this repository creates the DNS zone:** In `azurerm_DNS_RECORD/main.tf`, remove the DNS-zone data source and use the configured zone name directly:
+
+```hcl
+resource "azurerm_dns_a_record" "this" {
+  for_each = var.dns_record
+
+  name                = each.value.name
+  zone_name           = each.value.zone_name
+  resource_group_name = each.value.resource_group_name
+  ttl                 = each.value.ttl
+  records             = each.value.records
+}
+```
+
+Ensure the root module passes the same DNS zone name and resource group to the record module, and that the record module depends on the DNS-zone module when both are created in the same deployment:
+
+```hcl
+module "dns_record" {
+  source = "../azurerm_DNS_RECORD"
+
+  dns_record = var.dns_record
+
+  depends_on = [module.dns_zone]
+}
+```
+
+The input object must use `zone_name` consistently:
+
+```hcl
+dns_record = {
+  record1 = {
+    name                = "login"
+    zone_name           = "b18g103.online"
+    resource_group_name = "dev-rg"
+    ttl                 = 300
+    records             = ["203.0.113.10"] # Documentation-only TEST-NET IP; replace with your real public IP.
+  }
+}
+```
+
+If the DNS zones already exist outside this Terraform deployment and you intentionally need a data source, either use the single data-source address without `[each.key]`, or declare the data source with `for_each = var.dns_record` and configure its `name` and `resource_group_name` from each map entry. Do not mix these two patterns.
+
+### Q4: Remote Backend State Lock Error
 **Cause:** A prior pipeline was aborted or terminated unexpectedly, leaving an active blob lease on `dev.terraform.tfstate`.  
 **Resolution:** Run `terraform force-unlock <LOCK_ID>` after verifying no concurrent execution is active.
 
-### Q4: Key Vault Access Denied (403 Forbidden)
+### Q5: Key Vault Access Denied (403 Forbidden)
 **Cause:** The executing identity (Service Principal or user) does not have Azure RBAC permissions on the Key Vault.  
 **Resolution:** Assign the role **Key Vault Secrets Officer** or configure Key Vault Access Policies for your principal.
 
-### Q5: DNS Resolution Delay
+### Q6: DNS Resolution Delay
 **Cause:** DNS record changes require time to propagate across global DNS resolvers depending on the configured TTL.  
 **Resolution:** For testing, use a lower TTL (e.g., `300` seconds) and query the Azure name servers directly:
 ```bash
 nslookup login.b18g103.online <AZURE_NAME_SERVER>
 ```
 
-### Q6: Azure DevOps Pipeline Error: `Job ApplyInfrastructure: Environment qa could not be found. The environment does not exist or has not been authorized for use.`
+### Q7: Azure DevOps Pipeline Error: `Job ApplyInfrastructure: Environment qa could not be found. The environment does not exist or has not been authorized for use.`
 **Cause:**
 In Azure DevOps YAML pipelines, deployment jobs target an **Environment** resource (e.g., `environment: 'qa'`). This error occurs when:
 1. The target environment (e.g., `qa`) has **not been created** in your Azure DevOps project under **Pipelines ➔ Environments**.
