@@ -521,6 +521,72 @@ tfsec .
 trivy config .
 ```
 
+### Azure DevOps Pipeline Integration (`azure-pipelines.yml`)
+
+The repository supports automated multi-environment deployments (`dev`, `qa`, `prod`) using Azure DevOps YAML pipelines. The `ApplyInfrastructure` deployment job binds to Azure DevOps **Environments** for audit tracking, security gates, and approval workflows:
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+parameters:
+  - name: targetEnvironment
+    displayName: 'Target Deployment Environment'
+    type: string
+    default: 'qa'
+    values:
+      - 'dev'
+      - 'qa'
+      - 'prod'
+
+stages:
+  - stage: Validate
+    displayName: 'Lint & Validation'
+    jobs:
+      - job: ValidateTerraform
+        displayName: 'Format & Validate'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: 'latest'
+          - script: |
+              cd "Root Module"
+              terraform init -backend=false
+              terraform fmt -check -recursive
+              terraform validate
+            displayName: 'Validate HCL'
+
+  - stage: Deploy
+    displayName: 'Infrastructure Deployment'
+    dependsOn: Validate
+    jobs:
+      - deployment: ApplyInfrastructure
+        displayName: 'Apply Infrastructure'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: ${{ parameters.targetEnvironment }} # e.g., qa, dev, prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: TerraformInstaller@1
+                  inputs:
+                    terraformVersion: 'latest'
+                - script: |
+                    cd "Root Module"
+                    terraform init
+                    terraform apply -auto-approve -var-file="terraform.tfvars"
+                  displayName: 'Terraform Apply'
+```
+
+> [!IMPORTANT]
+> Azure DevOps requires any environment referenced under `environment: <name>` (such as `qa`) to be pre-created under **Pipelines ➔ Environments** with pipeline permissions enabled before running manual or automated deployments.
+
 ---
 
 ## 💡 Code Review & Quality Improvements
@@ -566,6 +632,35 @@ A comprehensive review of the codebase identified several issues and improvement
 ```bash
 nslookup login.b18g103.online <AZURE_NAME_SERVER>
 ```
+
+### Q6: Azure DevOps Pipeline Error: `Job ApplyInfrastructure: Environment qa could not be found. The environment does not exist or has not been authorized for use.`
+**Cause:**
+In Azure DevOps YAML pipelines, deployment jobs target an **Environment** resource (e.g., `environment: 'qa'`). This error occurs when:
+1. The target environment (e.g., `qa`) has **not been created** in your Azure DevOps project under **Pipelines ➔ Environments**.
+2. The environment exists, but the pipeline has not been granted **Pipeline permissions** to deploy into it.
+
+**Step-by-Step Resolution:**
+
+#### 1. Create the Missing Environment in Azure DevOps
+1. Open your Azure DevOps Project (`https://dev.azure.com/<OrgName>/<ProjectName>`).
+2. In the left navigation menu, go to **Pipelines** ➔ **Environments**.
+3. Click **New environment** (or **Create environment**).
+4. Enter the Name: **`qa`** (must match case-sensitively with the `environment` parameter in your pipeline YAML).
+5. Under **Resource**, select **None** (Terraform deployments manage cloud resources directly and do not require VM/Kubernetes agent pools).
+6. Click **Create**.
+7. *(Recommended)* Repeat this step to pre-create **`dev`** and **`prod`** environments so future pipeline runs succeed across all stages.
+
+#### 2. Authorize Pipeline Permissions
+1. Under **Pipelines** ➔ **Environments**, click the newly created **`qa`** environment to open its dashboard.
+2. In the top-right corner, click the **More actions** button (`⋮` or `...`) and select **Security**.
+3. Under the **Pipeline permissions** section:
+   - Click the **`+` (Add)** button, search for your pipeline name, and click to authorize it.
+   - *(Optional)* Alternatively, click the `⋮` next to Pipeline permissions and choose **Open access** to allow all pipelines in the project to target this environment.
+4. If your pipeline is currently paused on the run screen with an **"Authorization required"** or **"Permission needed"** banner, click **View** ➔ **Permit** / **Authorize**.
+
+#### 3. Re-run the Pipeline
+1. Return to **Pipelines** ➔ Select your pipeline ➔ Click **Run pipeline**.
+2. The `ApplyInfrastructure` job will now successfully locate the `qa` environment and proceed with deployment.
 
 ---
 
