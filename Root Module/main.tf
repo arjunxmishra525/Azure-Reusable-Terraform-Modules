@@ -18,7 +18,7 @@ module "subnet" {
 module "azurerm_bastion_host" {
   depends_on = [ module.subnet ]
   source = "../azurerm_bastion"
-bastion = var.bastion
+  bastion=var.bastion
 }
 
 module "nic_card" {
@@ -52,4 +52,15 @@ module "key_vault" {
     source = "../azurerm_key_vault_secret"
   key_vault = var.key_vault
 
+}
+module "dns_zone" {
+depends_on = [ module.resource_group ]  
+source = "../azurerm_DNS_ZONE"
+dns_zone = var.dns_zone
+}
+
+module "dns_a_records" {
+  depends_on = [ module.dns_zone ]
+source = "../azurerm_DNS_RECORD"
+dns_record = var.dns_record
 }

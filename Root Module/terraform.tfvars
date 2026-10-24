@@ -120,3 +120,21 @@ key_vault = {
   }
 }
 
+dns_zone = {
+  "dns_zone1" = {
+    name                = "b18g103.online"
+    resource_group_name = "dev-rg"
+  }
+}
+
+dns_record = {
+  "record1" = {
+    name                = "login"
+    dns_zone_name           = "b18g103.online"
+    resource_group_name = "dev-rg"
+    ttl                 = 3600
+    records             = ["49.45.40.50"]
+  }
+}
+
+

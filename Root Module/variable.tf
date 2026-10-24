@@ -14,12 +14,12 @@ variable "RG" {
 
 variable "vnet" {
   type = map(object({
-    name = string
+    name                = string
     resource_group_name = string
-    location = string
-    address_space = list(string)
+    location            = string
+    address_space       = list(string)
   }))
-validation {
+  validation {
     condition = alltrue([
       for arjun in values(var.vnet) :
       length(arjun.address_space) == 1 &&
@@ -31,27 +31,27 @@ validation {
 
 variable "azurerm_subnet" {
   type = map(object({
-    name = string
-    resource_group_name = string
+    name                 = string
+    resource_group_name  = string
     virtual_network_name = string
-    address_prefixes = list(string)
+    address_prefixes     = list(string)
   }))
 }
 
 
 variable "bastion" {
-type = map(any)
+  type = map(any)
 }
 
 variable "nic" {
   type = map(object({
-    name = string
-    location = string
-    resource_group_name =string
+    name                          = string
+    location                      = string
+    resource_group_name           = string
     private_ip_address_allocation = string
-    name_ip_config = string
-    virtual_network_name = string
-    data_subnet = string
+    name_ip_config                = string
+    virtual_network_name          = string
+    data_subnet                   = string
 
   }))
 }
@@ -59,19 +59,19 @@ variable "nic" {
 
 variable "nsg" {
   type = map(object({
-    name                = string
-    location            = string
-    resource_group_name = string
-    name_rule = string
-    protocol = string
-    access = string
-    direction = string
-    priority = number
-    source_port_range           = string
-  destination_port_range      = string
-  source_address_prefix       = string
-  destination_address_prefix  = string
- 
+    name                       = string
+    location                   = string
+    resource_group_name        = string
+    name_rule                  = string
+    protocol                   = string
+    access                     = string
+    direction                  = string
+    priority                   = number
+    source_port_range          = string
+    destination_port_range     = string
+    source_address_prefix      = string
+    destination_address_prefix = string
+
   }))
 }
 
@@ -84,7 +84,7 @@ variable "vm" {
 }
 
 variable "admin_username" {
-  type = string
+  type    = string
   default = "arjunmishra"
 }
 variable "admin_password" {
@@ -97,3 +97,56 @@ variable "key_vault" {
   type = map(any)
 }
 
+variable "dns_zone" {
+  type = map(object({
+    name                = string
+    resource_group_name = string
+  }))
+}
+
+
+variable "dns_record" {
+  description = "Configuration for Azure Public DNS A records."
+
+  type = map(object({
+    name                = string
+    dns_zone_name       = string
+    resource_group_name = string
+    ttl                 = optional(number, 300)
+    records             = list(string)
+  }))
+
+  validation {
+    condition = alltrue([
+      for record in values(var.dns_record) :
+      record.ttl >= 30 && record.ttl <= 86400
+    ])
+
+    error_message = "DNS TTL must be between 30 and 86400 seconds."
+  }
+
+  validation {
+    condition = alltrue([
+      for record in values(var.dns_record) :
+      length(record.records) > 0 &&
+      alltrue([
+        for ip in record.records :
+        can(cidrnetmask("${ip}/32"))
+      ])
+    ])
+
+    error_message = "Each DNS A record must contain at least one valid IPv4 address."
+  }
+
+  validation {
+    condition = alltrue([
+      for record in values(var.dns_record) :
+      length(trimspace(record.name)) > 0 &&
+      length(trimspace(record.dns_zone_name)) > 0 &&
+      length(trimspace(record.resource_group_name)) > 0
+    ])
+
+    error_message = "DNS record name, zone name and resource group name must not be empty."
+  }
+
+}
