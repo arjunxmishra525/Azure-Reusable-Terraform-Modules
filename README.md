@@ -1,11 +1,5 @@
 # Azure Reusable Terraform Modules (Enterprise Edition)
 
-[![Terraform](https://img.shields.io/badge/Terraform-%3E%3D_1.5.0-623CE4?logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![Azure Provider](https://img.shields.io/badge/azurerm-5.10.0-0078D4?logo=microsoft-azure&logoColor=white)](https://registry.terraform.io/providers/hashicorp/azurerm/latest)
-[![IaC Security](https://img.shields.io/badge/Security-Tfsec%20%7C%20Checkov-brightgreen?logo=shield)](https://github.com/aquasecurity/tfsec)
-[![License](https://img.shields.io/badge/License-GPL_v3-blue.svg)](LICENSE)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](#)
-
 A modular, highly scalable, and production-ready **Azure Infrastructure as Code (IaC)** framework built with HashiCorp Terraform. This repository implements industry-standard patterns for deploying end-to-end cloud infrastructure including virtual networks, secure subnets, Azure Bastion host, network security groups (NSGs), network interfaces (NICs), Linux virtual machines, Azure Key Vault secret management, and **Azure Public DNS Zones with A Records**.
 
 ---
