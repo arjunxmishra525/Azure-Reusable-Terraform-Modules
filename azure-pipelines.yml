@@ -29,6 +29,13 @@ variables:
       value: backend_pipeline
     - name: container 
       value: arjun-tfstate
+    - ${{ if eq(parameters.env, 'dev') }}:
+      - group: vg-dev         
+    - ${{if eq(parameters.env,'qa')}}: 
+      - group: vg-qa
+    - ${{if eq(parameters.env, 'prod')}} :
+      - group: vg-prod
+
 stages:
   - stage: Build 
     displayName: 'Build and Security Scan'
