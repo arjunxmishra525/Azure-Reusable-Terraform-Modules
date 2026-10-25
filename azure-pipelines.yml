@@ -31,7 +31,7 @@ variables:
 
 stages:
   - stage: Build 
-    displayName: 'Build and Security Scan'
+    displayName: 'Build&Security Scan(${{parameters.env}})'
     jobs:
       - job:  
         displayName: 'Build Code'
