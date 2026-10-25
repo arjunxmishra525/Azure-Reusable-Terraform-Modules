@@ -20,8 +20,14 @@ parameters:
 
 variables:
     - name: working directory
-      value: 
-
-
+      value: '$(Build.SourcesDirectory)/Root Module/${{parameters.env}}'
+    - name: key
+      value: '${{parameters.env}}.terraform.tfstate'
+    - name: storage
+      value: pipelinestorageaccount13
+    - name: rg
+      value: backend_pipeline
+    - name: container 
+      value: arjun-tfstate
 stages:
   - stage:               
