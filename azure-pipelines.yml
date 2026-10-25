@@ -1,0 +1,27 @@
+trigger:
+ branches:
+   include:
+     - none 
+     
+pool:
+   name: ARJUN
+
+
+
+parameters:
+  - name: env
+    default: dev
+    type: boolean
+    values:
+      - dev 
+      - qa
+      - prod
+
+
+variables:
+    - name: working directory
+      value: 
+
+
+stages:
+  - stage:               
