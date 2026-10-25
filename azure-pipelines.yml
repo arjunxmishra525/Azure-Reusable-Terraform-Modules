@@ -31,7 +31,7 @@ variables:
 
 stages:
   - stage: Build 
-    displayName: 'Build&Security Scan(${{parameters.env}})'
+    displayName: 'Build(${{parameters.env}})'
     jobs:
       - job:  
         displayName: 'Build Code'
@@ -56,3 +56,43 @@ stages:
               outputTo: 'console'
               customCommand: 'fmt'
               environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
+
+
+  - stage: scan
+    displayName: Security Scan(${{parameters.env}})     
+    jobs:
+      - job:
+        steps:
+          - task: TerraformTask@5
+            displayName: 'init'
+            inputs:
+             provider: 'azurerm'
+             command: 'init'
+             workingDirectory: '$(wd)'
+             backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+             backendAzureRmStorageAccountName: '$(storage)'
+             backendAzureRmContainerName: '$(container)'
+             backendAzureRmKey: '$(key)' 
+
+          - task: PowerShell@2
+            displayName: Tool Checkout
+            inputs:
+              targetType: 'inline'
+              script: |
+                $ErrorActionPreference = "Stop"
+                
+                                terraform --version
+                                tflint --version
+                                trivy --version
+                                infracost --version
+
+          - task: PowerShell@2
+            displayName: Linting Check
+            inputs:
+              targetType: 'inline'
+              script: |
+                $ErrorActionPreference = "Stop"
+                                tflint --init
+                                tflint --recursive
+
+              workingDirectory: $(wd)                 
