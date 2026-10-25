@@ -11,7 +11,7 @@ pool:
 parameters:
   - name: env
     default: dev
-    type: boolean
+    type: string
     values:
       - dev 
       - qa
@@ -19,7 +19,7 @@ parameters:
 
 
 variables:
-    - name: working directory
+    - name: wd
       value: '$(Build.SourcesDirectory)/Root Module/${{parameters.env}}'
     - name: key
       value: '${{parameters.env}}.terraform.tfstate'
@@ -30,4 +30,19 @@ variables:
     - name: container 
       value: arjun-tfstate
 stages:
-  - stage:               
+  - stage: Build 
+    displayName: 'Build and Security Scan'
+    jobs:
+      - job:  
+        displayName: 'Build Code'
+        steps:
+          - task: TerraformTask@5
+            inputs:
+             provider: 'azurerm'
+             command: 'init'
+             workingDirectory: '$(wd)'
+             backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+             backendAzureRmStorageAccountName: '$(storage)'
+             backendAzureRmContainerName: '$(container)'
+             backendAzureRmKey: '$(key)'
+         
