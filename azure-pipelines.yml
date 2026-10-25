@@ -19,8 +19,8 @@ parameters:
 
 
 variables:
-    # - name: wd
-    #   value: '$(Build.SourcesDirectory)/Root Module/${{parameters.env}}'
+    - name: wd
+      value: '$(Build.SourcesDirectory)/Root Module/${{parameters.env}}'
     # - name: key
     #   value: '${{parameters.env}}.terraform.tfstate'
     # - name: storage
@@ -29,7 +29,7 @@ variables:
     #   value: backend_pipeline
     # - name: container 
     #   value: arjun-tfstate
-    - ${{ if eq(parameters.env, 'dev') }}:
+    - ${{if eq(parameters.env,'dev')}}:
       - group: vg-dev         
     - ${{if eq(parameters.env,'qa')}}: 
       - group: vg-qa
