@@ -1,4 +1,3 @@
-
 trigger: none
 pr: none
 
@@ -16,17 +15,25 @@ parameters:
       - prod
 
 variables:
-  - name: wd
-    value: '$(Build.SourcesDirectory)/Root Module/${{ parameters.env }}'
-
   - ${{ if eq(parameters.env, 'dev') }}:
       - group: vg-dev
-
   - ${{ if eq(parameters.env, 'qa') }}:
       - group: vg-qa
-
   - ${{ if eq(parameters.env, 'prod') }}:
       - group: vg-prod
+
+  - ${{ if eq(parameters.env, 'dev') }}:
+      - name: wd
+        value: '$(Build.SourcesDirectory)/Root Module/Dev'
+  - ${{ if eq(parameters.env, 'qa') }}:
+      - name: wd
+        value: '$(Build.SourcesDirectory)/Root Module/QA'
+  - ${{ if eq(parameters.env, 'prod') }}:
+      - name: wd
+        value: '$(Build.SourcesDirectory)/Root Module/Prod'
+
+  - name: key
+    value: '${{ parameters.env }}.terraform.tfstate'
 
   - name: ReportDir
     value: '$(Build.ArtifactStagingDirectory)/security-reports'
@@ -47,7 +54,7 @@ stages:
             displayName: Validate Terraform working directory
             inputs:
               targetType: inline
-              pwsh: true
+              pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
 
@@ -57,11 +64,16 @@ stages:
                   throw "Terraform working directory not found: $wd"
                 }
 
-                if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
+                $terraform = Get-Command terraform.exe -ErrorAction SilentlyContinue
+                if (-not $terraform) {
+                  $terraform = Get-Command terraform -ErrorAction SilentlyContinue
+                }
+
+                if (-not $terraform) {
                   throw "Terraform is not installed or not available in PATH."
                 }
 
-                terraform version
+                & $terraform.Source version
                 if ($LASTEXITCODE -ne 0) {
                   throw "Terraform version check failed."
                 }
@@ -81,7 +93,7 @@ stages:
             displayName: Terraform Format Check
             inputs:
               targetType: inline
-              pwsh: true
+              pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
                 Set-Location -LiteralPath "$(wd)"
@@ -89,7 +101,7 @@ stages:
                 terraform fmt -check -recursive
 
                 if ($LASTEXITCODE -ne 0) {
-                  throw "Terraform formatting check failed. Run terraform fmt -recursive and commit the changes."
+                  throw "Terraform formatting check failed. Run 'terraform fmt -recursive' and commit the changes."
                 }
 
   - stage: SecurityScan
@@ -108,7 +120,7 @@ stages:
             displayName: Verify TFLint and Run Lint
             inputs:
               targetType: inline
-              pwsh: true
+              pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
                 $wd = "$(wd)"
@@ -138,9 +150,9 @@ stages:
                   throw "TFLint plugin initialization failed."
                 }
 
-                & $tflint.Source
+                & $tflint.Source --recursive --minimum-failure-severity=error
                 if ($LASTEXITCODE -ne 0) {
-                  throw "TFLint detected issues or failed."
+                  throw "TFLint detected errors."
                 }
 
       - job: SecurityScan
@@ -157,7 +169,7 @@ stages:
             displayName: Verify Security Tools and Prepare Reports
             inputs:
               targetType: inline
-              pwsh: true
+              pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
 
@@ -199,7 +211,7 @@ stages:
             displayName: Gitleaks Secret Scan
             inputs:
               targetType: inline
-              pwsh: true
+              pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
 
@@ -211,7 +223,12 @@ stages:
                   throw ".gitleaks.toml was not found at the repository root."
                 }
 
-                & "$(GITLEAKS_EXE)" dir $root `
+                $gitleaksExe = if ($env:GITLEAKS_EXE) { $env:GITLEAKS_EXE } else { (Get-Command gitleaks.exe, gitleaks -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1) }
+                if (-not $gitleaksExe) {
+                  throw "Gitleaks executable not found."
+                }
+
+                & "$gitleaksExe" dir $root `
                   --config="$config" `
                   --redact `
                   --no-banner `
@@ -230,14 +247,19 @@ stages:
             displayName: tfsec Terraform Security Scan
             inputs:
               targetType: inline
-              pwsh: true
+              pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
 
                 $root = "$(Build.SourcesDirectory)"
                 $report = Join-Path "$(ReportDir)" 'tfsec.json'
 
-                & "$(TFSEC_EXE)" $root `
+                $tfsecExe = if ($env:TFSEC_EXE) { $env:TFSEC_EXE } else { (Get-Command tfsec.exe, tfsec -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1) }
+                if (-not $tfsecExe) {
+                  throw "tfsec executable not found."
+                }
+
+                & "$tfsecExe" $root `
                   --format json `
                   --out "$report" `
                   --minimum-severity HIGH
@@ -247,6 +269,17 @@ stages:
                 if ($scanExit -ne 0) {
                   Write-Host "##vso[task.logissue type=error]tfsec failed or detected security findings. Review the report."
                   exit $scanExit
+                }
+
+          - task: PowerShell@2
+            displayName: Ensure Report Directory Exists
+            condition: always()
+            inputs:
+              targetType: inline
+              pwsh: false
+              script: |
+                if (-not (Test-Path -LiteralPath "$(ReportDir)")) {
+                  New-Item -ItemType Directory -Path "$(ReportDir)" -Force | Out-Null
                 }
 
           - task: PublishPipelineArtifact@1
