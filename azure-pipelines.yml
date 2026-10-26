@@ -182,7 +182,7 @@ stages:
               command: 'plan'
               workingDirectory: '$(wd)'
               commandOptions: '-out=tfplan'
-              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+              environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
 # Variable Ftech from Keyvault at runtime
             env:
                   TF_VAR_admin_username: $(adminusername1)
@@ -227,7 +227,7 @@ stages:
               command: 'plan'
               workingDirectory: '$(wd)'
               commandOptions: '-out=tfplan'
-              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+              environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
 # Variable Ftech from Keyvault at runtime
             env:
                   TF_VAR_admin_username: $(adminusername1)
