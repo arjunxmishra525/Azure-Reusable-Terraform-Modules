@@ -153,68 +153,68 @@ stages:
               artifact: 'terraform-security-reports'
               publishLocation: pipeline
 
-  - stage: Plan
-    displayName: 'Terraform Plan - ${{ parameters.env }}'
-    dependsOn: ValidateAndScan
-    condition: succeeded()
-    jobs:
-      - job: TerraformPlan
-        displayName: Terraform init and plan
-        steps:
-          - checkout: self
-            clean: true
+#   - stage: Plan
+#     displayName: 'Terraform Plan - ${{ parameters.env }}'
+#     dependsOn: ValidateAndScan
+#     condition: succeeded()
+#     jobs:
+#       - job: TerraformPlan
+#         displayName: Terraform init and plan
+#         steps:
+#           - checkout: self
+#             clean: true
 
-          - task: PowerShell@2
-            displayName: Verify plan prerequisites
-            inputs:
-              targetType: inline
-              pwsh: false
-              script: |
-                $ErrorActionPreference = 'Stop'
-                if (-not (Test-Path -LiteralPath "$(wd)" -PathType Container)) {
-                  throw "Terraform working directory not found: $(wd)"
-                }
-                if ([string]::IsNullOrWhiteSpace($env:TF_VAR_vm_admin_password)) {
-                  throw "Required secret variable vmadminpassword is missing or empty. Check the selected variable group and mark it secret."
-                }
-            env:
-              TF_VAR_vm_admin_password: $(vmadminpassword)
+#           - task: PowerShell@2
+#             displayName: Verify plan prerequisites
+#             inputs:
+#               targetType: inline
+#               pwsh: false
+#               script: |
+#                 $ErrorActionPreference = 'Stop'
+#                 if (-not (Test-Path -LiteralPath "$(wd)" -PathType Container)) {
+#                   throw "Terraform working directory not found: $(wd)"
+#                 }
+#                 if ([string]::IsNullOrWhiteSpace($env:TF_VAR_vm_admin_password)) {
+#                   throw "Required secret variable vmadminpassword is missing or empty. Check the selected variable group and mark it secret."
+#                 }
+#             env:
+#               TF_VAR_vm_admin_password: $(vmadminpassword)
 
-          - task: TerraformTask@5
-            displayName: Terraform Init
-            inputs:
-              provider: azurerm
-              command: init
-              workingDirectory: '$(wd)'
-              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
-              backendAzureRmStorageAccountName: '$(storage)'
-              backendAzureRmContainerName: '$(container)'
-              backendAzureRmKey: '$(key)'
-              commandOptions: '-input=false'
+#           - task: TerraformTask@5
+#             displayName: Terraform Init
+#             inputs:
+#               provider: azurerm
+#               command: init
+#               workingDirectory: '$(wd)'
+#               backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+#               backendAzureRmStorageAccountName: '$(storage)'
+#               backendAzureRmContainerName: '$(container)'
+#               backendAzureRmKey: '$(key)'
+#               commandOptions: '-input=false'
 
-          - task: PowerShell@2
-            displayName: Terraform Plan (validate secret injection)
-            inputs:
-              targetType: inline
-              pwsh: false
-              script: |
-                $ErrorActionPreference = 'Stop'
-                Set-Location -LiteralPath "$(wd)"
-                terraform plan -input=false -out="$(Build.ArtifactStagingDirectory)/${{ parameters.env }}.tfplan"
-                if ($LASTEXITCODE -ne 0) { throw "Terraform plan failed." }
-            env:
-              TF_VAR_vm_admin_password: $(vmadminpassword)
+#           - task: PowerShell@2
+#             displayName: Terraform Plan (validate secret injection)
+#             inputs:
+#               targetType: inline
+#               pwsh: false
+#               script: |
+#                 $ErrorActionPreference = 'Stop'
+#                 Set-Location -LiteralPath "$(wd)"
+#                 terraform plan -input=false -out="$(Build.ArtifactStagingDirectory)/${{ parameters.env }}.tfplan"
+#                 if ($LASTEXITCODE -ne 0) { throw "Terraform plan failed." }
+#             env:
+#               TF_VAR_vm_admin_password: $(vmadminpassword)
 
-          - task: PublishPipelineArtifact@1
-            displayName: Publish Terraform plan
-            inputs:
-              targetPath: '$(Build.ArtifactStagingDirectory)/${{ parameters.env }}.tfplan'
-              artifact: 'terraform-plan-${{ parameters.env }}'
-              publishLocation: pipeline
+#           - task: PublishPipelineArtifact@1
+#             displayName: Publish Terraform plan
+#             inputs:
+#               targetPath: '$(Build.ArtifactStagingDirectory)/${{ parameters.env }}.tfplan'
+#               artifact: 'terraform-plan-${{ parameters.env }}'
+#               publishLocation: pipeline
 
-# IMPORTANT:
-# - Create .gitleaks.toml at repository root; use a reviewed config. Never commit real credentials.
-# - In each vg-* group define secret vmadminpassword, plus storage and container.
-# - Terraform variable must be named vm_admin_password (TF_VAR_vm_admin_password maps to it).
-# - If your actual Terraform variable name differs, change both the HCL variable and TF_VAR_ name consistently.
-# - This pipeline intentionally stops at plan; add protected environment approvals and apply of the reviewed saved plan separately.
+# # IMPORTANT:
+# # - Create .gitleaks.toml at repository root; use a reviewed config. Never commit real credentials.
+# # - In each vg-* group define secret vmadminpassword, plus storage and container.
+# # - Terraform variable must be named vm_admin_password (TF_VAR_vm_admin_password maps to it).
+# # - If your actual Terraform variable name differs, change both the HCL variable and TF_VAR_ name consistently.
+# # - This pipeline intentionally stops at plan; add protected environment approvals and apply of the reviewed saved plan separately.
