@@ -15,6 +15,8 @@ parameters:
       - prod
 
 variables:
+  # The selected variable group must contain storage, container, and
+  # vmadminpassword (mark vmadminpassword as secret).
   - ${{ if eq(parameters.env, 'dev') }}:
       - group: vg-dev
   - ${{ if eq(parameters.env, 'qa') }}:
@@ -22,61 +24,161 @@ variables:
   - ${{ if eq(parameters.env, 'prod') }}:
       - group: vg-prod
 
-  - ${{ if eq(parameters.env, 'dev') }}:
-      - name: wd
-        value: '$(Build.SourcesDirectory)/Root Module/Dev'
-  - ${{ if eq(parameters.env, 'qa') }}:
-      - name: wd
-        value: '$(Build.SourcesDirectory)/Root Module/QA'
-  - ${{ if eq(parameters.env, 'prod') }}:
-      - name: wd
-        value: '$(Build.SourcesDirectory)/Root Module/Prod'
-
+  - name: wd
+    value: '$(Build.SourcesDirectory)/Root Module/${{ parameters.env }}'
   - name: key
     value: '${{ parameters.env }}.terraform.tfstate'
-
   - name: ReportDir
     value: '$(Build.ArtifactStagingDirectory)/security-reports'
 
 stages:
-  - stage: Build
-    displayName: 'Build - ${{ parameters.env }}'
-
+  - stage: ValidateAndScan
+    displayName: 'Validate and Security Scan - ${{ parameters.env }}'
     jobs:
-      - job: TerraformBuild
-        displayName: Terraform Init and Format
-
+      - job: TerraformChecks
+        displayName: Terraform checks
         steps:
           - checkout: self
             clean: true
+            fetchDepth: 0
+            persistCredentials: false
 
           - task: PowerShell@2
-            displayName: Validate Terraform working directory
+            displayName: Verify tools and working directory
             inputs:
               targetType: inline
               pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
-
                 $wd = "$(wd)"
-
                 if (-not (Test-Path -LiteralPath $wd -PathType Container)) {
                   throw "Terraform working directory not found: $wd"
                 }
 
-                $terraform = Get-Command terraform.exe -ErrorAction SilentlyContinue
-                if (-not $terraform) {
-                  $terraform = Get-Command terraform -ErrorAction SilentlyContinue
+                foreach ($tool in @('terraform', 'tflint', 'tfsec', 'gitleaks')) {
+                  $cmd = Get-Command "$tool.exe" -ErrorAction SilentlyContinue
+                  if (-not $cmd) { $cmd = Get-Command $tool -ErrorAction SilentlyContinue }
+                  if (-not $cmd) { throw "$tool is not installed or not available in PATH." }
+                  Write-Host "$tool found at $($cmd.Source)"
                 }
 
-                if (-not $terraform) {
-                  throw "Terraform is not installed or not available in PATH."
-                }
+                New-Item -ItemType Directory -Path "$(ReportDir)" -Force | Out-Null
 
-                & $terraform.Source version
+          - task: PowerShell@2
+            displayName: Terraform Format and Validate
+            inputs:
+              targetType: inline
+              pwsh: false
+              script: |
+                $ErrorActionPreference = 'Stop'
+                Set-Location -LiteralPath "$(wd)"
+
+                terraform fmt -check -recursive
                 if ($LASTEXITCODE -ne 0) {
-                  throw "Terraform version check failed."
+                  throw "Terraform format check failed. Run terraform fmt -recursive and commit the changes."
                 }
+
+                terraform init -backend=false -input=false
+                if ($LASTEXITCODE -ne 0) { throw "Terraform init (backend disabled) failed." }
+
+                terraform validate
+                if ($LASTEXITCODE -ne 0) { throw "Terraform validation failed." }
+
+          - task: PowerShell@2
+            displayName: TFLint
+            inputs:
+              targetType: inline
+              pwsh: false
+              script: |
+                $ErrorActionPreference = 'Stop'
+                Set-Location -LiteralPath "$(wd)"
+                tflint --init
+                if ($LASTEXITCODE -ne 0) { throw "TFLint initialization failed." }
+
+                tflint --recursive --minimum-failure-severity=error
+                if ($LASTEXITCODE -ne 0) { throw "TFLint detected errors." }
+
+          - task: PowerShell@2
+            displayName: Gitleaks Secret Scan
+            inputs:
+              targetType: inline
+              pwsh: false
+              script: |
+                $ErrorActionPreference = 'Stop'
+                $root = "$(Build.SourcesDirectory)"
+                $config = Join-Path $root '.gitleaks.toml'
+                $report = Join-Path "$(ReportDir)" 'gitleaks.json'
+
+                if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
+                  throw ".gitleaks.toml was not found at repository root."
+                }
+
+                # Scan working tree AND Git history. Do not print secret values.
+                gitleaks git $root `
+                  --config="$config" `
+                  --redact `
+                  --no-banner `
+                  --report-format json `
+                  --report-path "$report" `
+                  --exit-code 1
+
+                $scanExit = $LASTEXITCODE
+                if ($scanExit -ne 0) {
+                  Write-Host "##vso[task.logissue type=error]Gitleaks found potential secrets or the scan failed. Review the redacted report artifact."
+                  exit $scanExit
+                }
+
+          - task: PowerShell@2
+            displayName: tfsec Terraform Security Scan
+            inputs:
+              targetType: inline
+              pwsh: false
+              script: |
+                $ErrorActionPreference = 'Stop'
+                $root = "$(Build.SourcesDirectory)"
+                $report = Join-Path "$(ReportDir)" 'tfsec.json'
+
+                tfsec $root --format json --out "$report" --minimum-severity HIGH
+                $scanExit = $LASTEXITCODE
+                if ($scanExit -ne 0) {
+                  Write-Host "##vso[task.logissue type=error]tfsec reported HIGH/CRITICAL findings or the scan failed."
+                  exit $scanExit
+                }
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish security reports
+            condition: always()
+            inputs:
+              targetPath: '$(ReportDir)'
+              artifact: 'terraform-security-reports'
+              publishLocation: pipeline
+
+  - stage: Plan
+    displayName: 'Terraform Plan - ${{ parameters.env }}'
+    dependsOn: ValidateAndScan
+    condition: succeeded()
+    jobs:
+      - job: TerraformPlan
+        displayName: Terraform init and plan
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: PowerShell@2
+            displayName: Verify plan prerequisites
+            inputs:
+              targetType: inline
+              pwsh: false
+              script: |
+                $ErrorActionPreference = 'Stop'
+                if (-not (Test-Path -LiteralPath "$(wd)" -PathType Container)) {
+                  throw "Terraform working directory not found: $(wd)"
+                }
+                if ([string]::IsNullOrWhiteSpace($env:TF_VAR_vm_admin_password)) {
+                  throw "Required secret variable vmadminpassword is missing or empty. Check the selected variable group and mark it secret."
+                }
+            env:
+              TF_VAR_vm_admin_password: $(vmadminpassword)
 
           - task: TerraformTask@5
             displayName: Terraform Init
@@ -88,204 +190,31 @@ stages:
               backendAzureRmStorageAccountName: '$(storage)'
               backendAzureRmContainerName: '$(container)'
               backendAzureRmKey: '$(key)'
+              commandOptions: '-input=false'
 
           - task: PowerShell@2
-            displayName: Terraform Format Check
+            displayName: Terraform Plan (validate secret injection)
             inputs:
               targetType: inline
               pwsh: false
               script: |
                 $ErrorActionPreference = 'Stop'
                 Set-Location -LiteralPath "$(wd)"
-
-                terraform fmt -check -recursive
-
-                if ($LASTEXITCODE -ne 0) {
-                  throw "Terraform formatting check failed. Run 'terraform fmt -recursive' and commit the changes."
-                }
-
-  - stage: SecurityScan
-    displayName: 'Security Scan - ${{ parameters.env }}'
-    dependsOn: Build
-
-    jobs:
-      - job: TerraformLint
-        displayName: TFLint Validation
-
-        steps:
-          - checkout: self
-            clean: true
-
-          - task: PowerShell@2
-            displayName: Verify TFLint and Run Lint
-            inputs:
-              targetType: inline
-              pwsh: false
-              script: |
-                $ErrorActionPreference = 'Stop'
-                $wd = "$(wd)"
-
-                if (-not (Test-Path -LiteralPath $wd -PathType Container)) {
-                  throw "Terraform directory not found: $wd"
-                }
-
-                $tflint = Get-Command tflint.exe -ErrorAction SilentlyContinue
-                if (-not $tflint) {
-                  $tflint = Get-Command tflint -ErrorAction SilentlyContinue
-                }
-
-                if (-not $tflint) {
-                  throw "TFLint is not installed or not available in PATH."
-                }
-
-                & $tflint.Source --version
-                if ($LASTEXITCODE -ne 0) {
-                  throw "TFLint version check failed."
-                }
-
-                Set-Location -LiteralPath $wd
-
-                & $tflint.Source --init
-                if ($LASTEXITCODE -ne 0) {
-                  throw "TFLint plugin initialization failed."
-                }
-
-                & $tflint.Source --recursive --minimum-failure-severity=error
-                if ($LASTEXITCODE -ne 0) {
-                  throw "TFLint detected errors."
-                }
-
-      - job: SecurityScan
-        displayName: tfsec and Gitleaks
-        timeoutInMinutes: 30
-
-        steps:
-          - checkout: self
-            clean: true
-            fetchDepth: 0
-            persistCredentials: false
-
-          - task: PowerShell@2
-            displayName: Verify Security Tools and Prepare Reports
-            inputs:
-              targetType: inline
-              pwsh: false
-              script: |
-                $ErrorActionPreference = 'Stop'
-
-                $tfsec = Get-Command tfsec.exe -ErrorAction SilentlyContinue
-                if (-not $tfsec) {
-                  $tfsec = Get-Command tfsec -ErrorAction SilentlyContinue
-                }
-
-                $gitleaks = Get-Command gitleaks.exe -ErrorAction SilentlyContinue
-                if (-not $gitleaks) {
-                  $gitleaks = Get-Command gitleaks -ErrorAction SilentlyContinue
-                }
-
-                if (-not $tfsec) {
-                  throw "tfsec is not installed or not available in PATH."
-                }
-
-                if (-not $gitleaks) {
-                  throw "Gitleaks is not installed or not available in PATH."
-                }
-
-                & $tfsec.Source --version
-                if ($LASTEXITCODE -ne 0) {
-                  throw "tfsec version check failed."
-                }
-
-                & $gitleaks.Source version
-                if ($LASTEXITCODE -ne 0) {
-                  throw "Gitleaks version check failed."
-                }
-
-                New-Item -ItemType Directory `
-                  -Path "$(ReportDir)" -Force | Out-Null
-
-                Write-Host "##vso[task.setvariable variable=TFSEC_EXE]$($tfsec.Source)"
-                Write-Host "##vso[task.setvariable variable=GITLEAKS_EXE]$($gitleaks.Source)"
-
-          - task: PowerShell@2
-            displayName: Gitleaks Secret Scan
-            inputs:
-              targetType: inline
-              pwsh: false
-              script: |
-                $ErrorActionPreference = 'Stop'
-
-                $root = "$(Build.SourcesDirectory)"
-                $config = Join-Path $root '.gitleaks.toml'
-                $report = Join-Path "$(ReportDir)" 'gitleaks.json'
-
-                if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
-                  throw ".gitleaks.toml was not found at the repository root."
-                }
-
-                $gitleaksExe = if ($env:GITLEAKS_EXE) { $env:GITLEAKS_EXE } else { (Get-Command gitleaks.exe, gitleaks -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1) }
-                if (-not $gitleaksExe) {
-                  throw "Gitleaks executable not found."
-                }
-
-                & "$gitleaksExe" dir $root `
-                  --config="$config" `
-                  --redact `
-                  --no-banner `
-                  --report-format json `
-                  --report-path "$report" `
-                  --exit-code 1
-
-                $scanExit = $LASTEXITCODE
-
-                if ($scanExit -ne 0) {
-                  Write-Host "##vso[task.logissue type=error]Gitleaks failed or detected potential secrets. Review the redacted report."
-                  exit $scanExit
-                }
-
-          - task: PowerShell@2
-            displayName: tfsec Terraform Security Scan
-            inputs:
-              targetType: inline
-              pwsh: false
-              script: |
-                $ErrorActionPreference = 'Stop'
-
-                $root = "$(Build.SourcesDirectory)"
-                $report = Join-Path "$(ReportDir)" 'tfsec.json'
-
-                $tfsecExe = if ($env:TFSEC_EXE) { $env:TFSEC_EXE } else { (Get-Command tfsec.exe, tfsec -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1) }
-                if (-not $tfsecExe) {
-                  throw "tfsec executable not found."
-                }
-
-                & "$tfsecExe" $root `
-                  --format json `
-                  --out "$report" `
-                  --minimum-severity HIGH
-
-                $scanExit = $LASTEXITCODE
-
-                if ($scanExit -ne 0) {
-                  Write-Host "##vso[task.logissue type=error]tfsec failed or detected security findings. Review the report."
-                  exit $scanExit
-                }
-
-          - task: PowerShell@2
-            displayName: Ensure Report Directory Exists
-            condition: always()
-            inputs:
-              targetType: inline
-              pwsh: false
-              script: |
-                if (-not (Test-Path -LiteralPath "$(ReportDir)")) {
-                  New-Item -ItemType Directory -Path "$(ReportDir)" -Force | Out-Null
-                }
+                terraform plan -input=false -out="$(Build.ArtifactStagingDirectory)/${{ parameters.env }}.tfplan"
+                if ($LASTEXITCODE -ne 0) { throw "Terraform plan failed." }
+            env:
+              TF_VAR_vm_admin_password: $(vmadminpassword)
 
           - task: PublishPipelineArtifact@1
-            displayName: Publish Security Reports
-            condition: always()
+            displayName: Publish Terraform plan
             inputs:
-              targetPath: '$(ReportDir)'
-              artifact: 'terraform-security-reports'
+              targetPath: '$(Build.ArtifactStagingDirectory)/${{ parameters.env }}.tfplan'
+              artifact: 'terraform-plan-${{ parameters.env }}'
               publishLocation: pipeline
+
+# IMPORTANT:
+# - Create .gitleaks.toml at repository root; use a reviewed config. Never commit real credentials.
+# - In each vg-* group define secret vmadminpassword, plus storage and container.
+# - Terraform variable must be named vm_admin_password (TF_VAR_vm_admin_password maps to it).
+# - If your actual Terraform variable name differs, change both the HCL variable and TF_VAR_ name consistently.
+# - This pipeline intentionally stops at plan; add protected environment approvals and apply of the reviewed saved plan separately.
