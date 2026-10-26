@@ -177,12 +177,67 @@ stages:
               backendAzureRmKey: '$(key)'
           
           - task: TerraformTask@5
-            displayName: Plan
             inputs:
               provider: 'azurerm'
               command: 'plan'
               workingDirectory: '$(wd)'
-              environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
+              commandOptions: '-out=tfplan'
+              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+# Variable Ftech from Keyvault at runtime
             env:
                   TF_VAR_admin_username: $(adminusername1)
                   TF_VAR_admin_password: $(adminpassword1)
+
+  - stage: Approval
+    displayName: 'Approval Req'
+    pool: server
+    jobs:
+      - job: 
+        steps:
+           - task: ManualValidation@1
+             displayName: 'Approval Req'
+             timeoutInMinutes: 5
+             inputs:
+               notifyUsers: 'arjun1@b18.online'
+               approvers: 'arjun1@b18.online'
+
+  - stage: Deployment 
+    displayName: deployment
+    dependsOn: Approval   
+    condition: succeeded()     
+    jobs:
+      - job: 
+        steps:
+          - task: TerraformTask@5
+            displayName: init
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(wd)'
+              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+              backendAzureRmResourceGroupName: '$(rg)'
+              backendAzureRmStorageAccountName: '$(storage)'
+              backendAzureRmContainerName: '$(container)'
+              backendAzureRmKey: '$(key)'
+          
+          - task: TerraformTask@5
+            displayName: 'plan generate'
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              workingDirectory: '$(wd)'
+              commandOptions: '-out=tfplan'
+              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+# Variable Ftech from Keyvault at runtime
+            env:
+                  TF_VAR_admin_username: $(adminusername1)
+                  TF_VAR_admin_password: $(adminpassword1)
+            
+          - task: TerraformTask@5
+            displayName: 'Deployment start'
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: '$(wd)'
+              commandOptions: '-auto-approve tfplan'
+              environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
