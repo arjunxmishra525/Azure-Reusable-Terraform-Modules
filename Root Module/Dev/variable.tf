@@ -91,8 +91,7 @@ variable "admin_username" {
   # default = "arjunmishra"
 }
 variable "admin_password" {
-  type      = string
-  sensitive = true
+  type = string
   # default = "Arjunmishra@20"
 }
 
