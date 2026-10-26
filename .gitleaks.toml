@@ -1,0 +1,22 @@
+
+title = "Terraform custom secret detection"
+[extend]
+useDefault = true
+
+[[rules]]
+id = "terraform-hardcoded-password"
+description = "Potential hardcoded password in Terraform"
+regex = '''(?i)(?:admin_password|vm_admin_password|administrator_password|password)\s*=\s*["'][^"'\s$][^"']{2,}["']'''
+keywords = ["admin_password", "vm_admin_password", "administrator_password", "password"]
+
+[[rules]]
+id = "terraform-hardcoded-api-key"
+description = "Potential hardcoded API key"
+regex = '''(?i)(?:api[_-]?key|client[_-]?secret|access[_-]?token|secret[_-]?key)\s*[:=]\s*["'][^"'\s$][^"']{5,}["']'''
+keywords = ["api_key", "apikey", "client_secret", "access_token", "secret_key"]
+
+[[rules]]
+id = "terraform-hardcoded-connection-string"
+description = "Potential hardcoded connection string"
+regex = '''(?i)(?:connection_string|account_key|storage_account_key)\s*=\s*["'][^"']{8,}["']'''
+keywords = ["connection_string", "account_key", "storage_account_key"]
