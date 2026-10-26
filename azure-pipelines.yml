@@ -165,6 +165,7 @@ stages:
         displayName: Terraform init and plan
         steps:
           - task: TerraformTask@5
+            displayName: init
             inputs:
               provider: 'azurerm'
               command: 'init'
@@ -174,3 +175,14 @@ stages:
               backendAzureRmStorageAccountName: '$(storage)'
               backendAzureRmContainerName: '$(container)'
               backendAzureRmKey: '$(key)'
+          
+          - task: TerraformTask@5
+            displayName: Plan
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              workingDirectory: '$(wd)'
+              environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
+            env:
+                  TF_VAR_admin_username: $(adminusername1)
+                  TF_VAR_admin_password: $(adminpassword1)
