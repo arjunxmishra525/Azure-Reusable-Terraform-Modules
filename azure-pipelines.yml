@@ -200,7 +200,9 @@ stages:
              inputs:
                notifyUsers: 'arjun1@b18g103.online'
                approvers: 'arjun1@b18g103.online'
-
+               instructions: 'Review Terraform plan before proceeding.'
+               onTimeout: reject
+               
   - stage: Deployment 
     displayName: deployment
     dependsOn: Approval   
