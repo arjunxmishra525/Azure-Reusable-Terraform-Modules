@@ -76,17 +76,35 @@ stages:
              backendAzureRmContainerName: '$(container)'
              backendAzureRmKey: '$(key)' 
 
+          
           - task: PowerShell@2
             displayName: Tool Checkout
             inputs:
-              targetType: 'inline'
-              script: |
-                $ErrorActionPreference = "Stop"
-                
-                                terraform --version
-                                tflint --version
-                                trivy --version
-                                infracost --version
+             targetType: inline
+             pwsh: true
+             script: |
+              $ErrorActionPreference = "Stop"
+
+              terraform --version
+              if ($LASTEXITCODE -ne 0) {
+                throw "Terraform version check failed"
+              }
+
+              tflint --version
+              if ($LASTEXITCODE -ne 0) {
+                throw "TFLint version check failed"
+              }
+
+              trivy --version
+              if ($LASTEXITCODE -ne 0) {
+                throw "Trivy version check failed"
+              }
+
+              infracost --version
+              if ($LASTEXITCODE -ne 0) {
+                throw "Infracost version check failed"
+              }
+
 
           - task: PowerShell@2
             displayName: Linting Check
