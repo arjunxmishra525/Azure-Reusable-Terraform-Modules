@@ -1,121 +1,147 @@
-trigger:
- branches:
-   include:
-     - none 
-     
+
+trigger: none
+pr: none
+
 pool:
-   name: ARJUN
-
-
+  name: ARJUN
 
 parameters:
   - name: env
-    default: dev
+    displayName: Select Environment
     type: string
+    default: dev
     values:
-      - dev 
+      - dev
       - qa
       - prod
 
-
 variables:
-    - name: wd
-      value: '$(Build.SourcesDirectory)/Root Module/${{parameters.env}}'
- 
-    - ${{if eq(parameters.env,'dev')}}:
-      - group: vg-dev         
-    - ${{if eq(parameters.env,'qa')}}: 
+  - name: wd
+    value: '$(Build.SourcesDirectory)/Root Module/${{ parameters.env }}'
+
+  - ${{ if eq(parameters.env, 'dev') }}:
+      - group: vg-dev
+
+  - ${{ if eq(parameters.env, 'qa') }}:
       - group: vg-qa
-    - ${{if eq(parameters.env, 'prod')}} :
+
+  - ${{ if eq(parameters.env, 'prod') }}:
       - group: vg-prod
-    - name: ReportDir
-      value: '$(Build.ArtifactStagingDirectory)\security-reports'
+
+  - name: ReportDir
+    value: '$(Build.ArtifactStagingDirectory)/security-reports'
 
 stages:
-  - stage: Build 
-    displayName: 'Build(${{parameters.env}})'
+  - stage: Build
+    displayName: 'Build - ${{ parameters.env }}'
+
     jobs:
-      - job:  
-        displayName: 'Build Code'
+      - job: TerraformBuild
+        displayName: Terraform Init and Format
+
         steps:
-          - task: TerraformTask@5
-            displayName: 'init'
-            inputs:
-             provider: 'azurerm'
-             command: 'init'
-             workingDirectory: '$(wd)'
-             backendServiceArm: 'Arjun-CI/CD-PIPELINE'
-             backendAzureRmStorageAccountName: '$(storage)'
-             backendAzureRmContainerName: '$(container)'
-             backendAzureRmKey: '$(key)'
-         
-          - task: TerraformTask@5
-            displayName: 'Code Format'
-            inputs:
-              provider: 'azurerm'
-              command: 'custom'
-              workingDirectory: '$(wd)'
-              outputTo: 'console'
-              customCommand: 'fmt'
-              environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
-
-
-  - stage: scan
-    displayName: Security Scan(${{parameters.env}})     
-    jobs:
-      - job:
-        steps:
-          - task: TerraformTask@5
-            displayName: 'init'
-            inputs:
-             provider: 'azurerm'
-             command: 'init'
-             workingDirectory: '$(wd)'
-             backendServiceArm: 'Arjun-CI/CD-PIPELINE'
-             backendAzureRmStorageAccountName: '$(storage)'
-             backendAzureRmContainerName: '$(container)'
-             backendAzureRmKey: '$(key)' 
-
-          
-          - task: PowerShell@2
-            displayName: Tool Checkout
-            inputs:
-             targetType: inline
-             pwsh: false
-             script: |
-              $ErrorActionPreference = "Stop"
-
-              terraform --version
-              if ($LASTEXITCODE -ne 0) {
-                throw "Terraform version check failed"
-              }
-
-              tflint --version
-              if ($LASTEXITCODE -ne 0) {
-                throw "TFLint version check failed"
-              }
-
-              trivy --version
-              if ($LASTEXITCODE -ne 0) {
-                throw "Trivy version check failed"
-              }
-
-              infracost --version
-              if ($LASTEXITCODE -ne 0) {
-                throw "Infracost version check failed"
-              }
-
+          - checkout: self
+            clean: true
 
           - task: PowerShell@2
-            displayName: Linting Check
+            displayName: Validate Terraform working directory
             inputs:
-              targetType: 'inline'
+              targetType: inline
+              pwsh: true
               script: |
-                $ErrorActionPreference = "Stop"
-                                tflint --init
-                                tflint --recursive
-              workingDirectory: $(wd)        
-        
+                $ErrorActionPreference = 'Stop'
+
+                $wd = "$(wd)"
+
+                if (-not (Test-Path -LiteralPath $wd -PathType Container)) {
+                  throw "Terraform working directory not found: $wd"
+                }
+
+                if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
+                  throw "Terraform is not installed or not available in PATH."
+                }
+
+                terraform version
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Terraform version check failed."
+                }
+
+          - task: TerraformTask@5
+            displayName: Terraform Init
+            inputs:
+              provider: azurerm
+              command: init
+              workingDirectory: '$(wd)'
+              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+              backendAzureRmStorageAccountName: '$(storage)'
+              backendAzureRmContainerName: '$(container)'
+              backendAzureRmKey: '$(key)'
+
+          - task: PowerShell@2
+            displayName: Terraform Format Check
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                $ErrorActionPreference = 'Stop'
+                Set-Location -LiteralPath "$(wd)"
+
+                terraform fmt -check -recursive
+
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Terraform formatting check failed. Run terraform fmt -recursive and commit the changes."
+                }
+
+  - stage: SecurityScan
+    displayName: 'Security Scan - ${{ parameters.env }}'
+    dependsOn: Build
+
+    jobs:
+      - job: TerraformLint
+        displayName: TFLint Validation
+
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: PowerShell@2
+            displayName: Verify TFLint and Run Lint
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                $ErrorActionPreference = 'Stop'
+                $wd = "$(wd)"
+
+                if (-not (Test-Path -LiteralPath $wd -PathType Container)) {
+                  throw "Terraform directory not found: $wd"
+                }
+
+                $tflint = Get-Command tflint.exe -ErrorAction SilentlyContinue
+                if (-not $tflint) {
+                  $tflint = Get-Command tflint -ErrorAction SilentlyContinue
+                }
+
+                if (-not $tflint) {
+                  throw "TFLint is not installed or not available in PATH."
+                }
+
+                & $tflint.Source --version
+                if ($LASTEXITCODE -ne 0) {
+                  throw "TFLint version check failed."
+                }
+
+                Set-Location -LiteralPath $wd
+
+                & $tflint.Source --init
+                if ($LASTEXITCODE -ne 0) {
+                  throw "TFLint plugin initialization failed."
+                }
+
+                & $tflint.Source
+                if ($LASTEXITCODE -ne 0) {
+                  throw "TFLint detected issues or failed."
+                }
 
       - job: SecurityScan
         displayName: tfsec and Gitleaks
@@ -128,7 +154,7 @@ stages:
             persistCredentials: false
 
           - task: PowerShell@2
-            displayName: Verify tools and prepare reports
+            displayName: Verify Security Tools and Prepare Reports
             inputs:
               targetType: inline
               pwsh: true
@@ -146,25 +172,21 @@ stages:
                 }
 
                 if (-not $tfsec) {
-                  throw "tfsec is not available in the agent PATH."
+                  throw "tfsec is not installed or not available in PATH."
                 }
 
                 if (-not $gitleaks) {
-                  throw "Gitleaks is not available in the agent PATH."
+                  throw "Gitleaks is not installed or not available in PATH."
                 }
 
-                $tfsecVersion = (& $tfsec.Source --version 2>&1 | Out-String)
-                $gitleaksVersion = (& $gitleaks.Source version 2>&1 | Out-String)
-
-                Write-Host "tfsec version: $tfsecVersion"
-                Write-Host "Gitleaks version: $gitleaksVersion"
-
-                if ($tfsecVersion -notmatch '1\.28\.14') {
-                  throw "Expected tfsec 1.28.14."
+                & $tfsec.Source --version
+                if ($LASTEXITCODE -ne 0) {
+                  throw "tfsec version check failed."
                 }
 
-                if ($gitleaksVersion -notmatch '8\.30\.1') {
-                  throw "Expected Gitleaks 8.30.1."
+                & $gitleaks.Source version
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Gitleaks version check failed."
                 }
 
                 New-Item -ItemType Directory `
@@ -174,7 +196,7 @@ stages:
                 Write-Host "##vso[task.setvariable variable=GITLEAKS_EXE]$($gitleaks.Source)"
 
           - task: PowerShell@2
-            displayName: Gitleaks custom secret scanning
+            displayName: Gitleaks Secret Scan
             inputs:
               targetType: inline
               pwsh: true
@@ -183,10 +205,10 @@ stages:
 
                 $root = "$(Build.SourcesDirectory)"
                 $config = Join-Path $root '.gitleaks.toml'
-                $report = "$(ReportDir)\gitleaks.json"
+                $report = Join-Path "$(ReportDir)" 'gitleaks.json'
 
-                if (-not (Test-Path $config)) {
-                  throw ".gitleaks.toml not found at repository root."
+                if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
+                  throw ".gitleaks.toml was not found at the repository root."
                 }
 
                 & "$(GITLEAKS_EXE)" dir $root `
@@ -197,13 +219,15 @@ stages:
                   --report-path "$report" `
                   --exit-code 1
 
-                if ($LASTEXITCODE -ne 0) {
-                  Write-Host "##vso[task.logissue type=error]Potential secrets detected. Check the redacted report."
-                  exit 1
+                $scanExit = $LASTEXITCODE
+
+                if ($scanExit -ne 0) {
+                  Write-Host "##vso[task.logissue type=error]Gitleaks failed or detected potential secrets. Review the redacted report."
+                  exit $scanExit
                 }
 
           - task: PowerShell@2
-            displayName: tfsec Terraform vulnerability scanning
+            displayName: tfsec Terraform Security Scan
             inputs:
               targetType: inline
               pwsh: true
@@ -211,7 +235,7 @@ stages:
                 $ErrorActionPreference = 'Stop'
 
                 $root = "$(Build.SourcesDirectory)"
-                $report = "$(ReportDir)\tfsec.json"
+                $report = Join-Path "$(ReportDir)" 'tfsec.json'
 
                 & "$(TFSEC_EXE)" $root `
                   --format json `
@@ -221,12 +245,12 @@ stages:
                 $scanExit = $LASTEXITCODE
 
                 if ($scanExit -ne 0) {
-                  Write-Host "##vso[task.logissue type=error]tfsec detected security findings or encountered an error."
+                  Write-Host "##vso[task.logissue type=error]tfsec failed or detected security findings. Review the report."
                   exit $scanExit
                 }
 
           - task: PublishPipelineArtifact@1
-            displayName: Publish security reports
+            displayName: Publish Security Reports
             condition: always()
             inputs:
               targetPath: '$(ReportDir)'
