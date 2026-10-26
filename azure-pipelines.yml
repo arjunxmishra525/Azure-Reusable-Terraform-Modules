@@ -198,8 +198,8 @@ stages:
              displayName: 'Approval Req'
              timeoutInMinutes: 5
              inputs:
-               notifyUsers: 'arjun1@b18.online'
-               approvers: 'arjun1@b18.online'
+               notifyUsers: 'arjun1@b18g103.online'
+               approvers: 'arjun1@b18g103.online'
 
   - stage: Deployment 
     displayName: deployment
