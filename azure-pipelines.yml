@@ -21,22 +21,25 @@ parameters:
 variables:
     - name: wd
       value: '$(Build.SourcesDirectory)/Root Module/${{parameters.env}}'
-    - name: key
-      value: '${{parameters.env}}.terraform.tfstate'
-    - name: storage
-      value: pipelinestorageaccount13
-    - name: rg
-      value: backend_pipeline
-    - name: container 
-      value: arjun-tfstate
+ 
+    - ${{if eq(parameters.env,'dev')}}:
+      - group: vg-dev         
+    - ${{if eq(parameters.env,'qa')}}: 
+      - group: vg-qa
+    - ${{if eq(parameters.env, 'prod')}} :
+      - group: vg-prod
+    - name: ReportDir
+      value: '$(Build.ArtifactStagingDirectory)\security-reports'
+
 stages:
   - stage: Build 
-    displayName: 'Build and Security Scan'
+    displayName: 'Build(${{parameters.env}})'
     jobs:
       - job:  
         displayName: 'Build Code'
         steps:
           - task: TerraformTask@5
+            displayName: 'init'
             inputs:
              provider: 'azurerm'
              command: 'init'
@@ -46,3 +49,168 @@ stages:
              backendAzureRmContainerName: '$(container)'
              backendAzureRmKey: '$(key)'
          
+          - task: TerraformTask@5
+            displayName: 'Code Format'
+            inputs:
+              provider: 'azurerm'
+              command: 'custom'
+              workingDirectory: '$(wd)'
+              outputTo: 'console'
+              customCommand: 'fmt'
+              environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
+
+
+  - stage: scan
+    displayName: Security Scan(${{parameters.env}})     
+    jobs:
+      - job:
+        steps:
+          - task: TerraformTask@5
+            displayName: 'init'
+            inputs:
+             provider: 'azurerm'
+             command: 'init'
+             workingDirectory: '$(wd)'
+             backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+             backendAzureRmStorageAccountName: '$(storage)'
+             backendAzureRmContainerName: '$(container)'
+             backendAzureRmKey: '$(key)' 
+
+          - task: PowerShell@2
+            displayName: Tool Checkout
+            inputs:
+              targetType: 'inline'
+              script: |
+                $ErrorActionPreference = "Stop"
+                
+                                terraform --version
+                                tflint --version
+                                trivy --version
+                                infracost --version
+
+          - task: PowerShell@2
+            displayName: Linting Check
+            inputs:
+              targetType: 'inline'
+              script: |
+                $ErrorActionPreference = "Stop"
+                                tflint --init
+                                tflint --recursive
+              workingDirectory: $(wd)        
+        
+
+      - job: SecurityScan
+        displayName: tfsec and Gitleaks
+        timeoutInMinutes: 30
+
+        steps:
+          - checkout: self
+            clean: true
+            fetchDepth: 0
+            persistCredentials: false
+
+          - task: PowerShell@2
+            displayName: Verify tools and prepare reports
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                $ErrorActionPreference = 'Stop'
+
+                $tfsec = Get-Command tfsec.exe -ErrorAction SilentlyContinue
+                if (-not $tfsec) {
+                  $tfsec = Get-Command tfsec -ErrorAction SilentlyContinue
+                }
+
+                $gitleaks = Get-Command gitleaks.exe -ErrorAction SilentlyContinue
+                if (-not $gitleaks) {
+                  $gitleaks = Get-Command gitleaks -ErrorAction SilentlyContinue
+                }
+
+                if (-not $tfsec) {
+                  throw "tfsec is not available in the agent PATH."
+                }
+
+                if (-not $gitleaks) {
+                  throw "Gitleaks is not available in the agent PATH."
+                }
+
+                $tfsecVersion = (& $tfsec.Source --version 2>&1 | Out-String)
+                $gitleaksVersion = (& $gitleaks.Source version 2>&1 | Out-String)
+
+                Write-Host "tfsec version: $tfsecVersion"
+                Write-Host "Gitleaks version: $gitleaksVersion"
+
+                if ($tfsecVersion -notmatch '1\.28\.14') {
+                  throw "Expected tfsec 1.28.14."
+                }
+
+                if ($gitleaksVersion -notmatch '8\.30\.1') {
+                  throw "Expected Gitleaks 8.30.1."
+                }
+
+                New-Item -ItemType Directory `
+                  -Path "$(ReportDir)" -Force | Out-Null
+
+                Write-Host "##vso[task.setvariable variable=TFSEC_EXE]$($tfsec.Source)"
+                Write-Host "##vso[task.setvariable variable=GITLEAKS_EXE]$($gitleaks.Source)"
+
+          - task: PowerShell@2
+            displayName: Gitleaks custom secret scanning
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                $ErrorActionPreference = 'Stop'
+
+                $root = "$(Build.SourcesDirectory)"
+                $config = Join-Path $root '.gitleaks.toml'
+                $report = "$(ReportDir)\gitleaks.json"
+
+                if (-not (Test-Path $config)) {
+                  throw ".gitleaks.toml not found at repository root."
+                }
+
+                & "$(GITLEAKS_EXE)" dir $root `
+                  --config="$config" `
+                  --redact `
+                  --no-banner `
+                  --report-format json `
+                  --report-path "$report" `
+                  --exit-code 1
+
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Host "##vso[task.logissue type=error]Potential secrets detected. Check the redacted report."
+                  exit 1
+                }
+
+          - task: PowerShell@2
+            displayName: tfsec Terraform vulnerability scanning
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                $ErrorActionPreference = 'Stop'
+
+                $root = "$(Build.SourcesDirectory)"
+                $report = "$(ReportDir)\tfsec.json"
+
+                & "$(TFSEC_EXE)" $root `
+                  --format json `
+                  --out "$report" `
+                  --minimum-severity HIGH
+
+                $scanExit = $LASTEXITCODE
+
+                if ($scanExit -ne 0) {
+                  Write-Host "##vso[task.logissue type=error]tfsec detected security findings or encountered an error."
+                  exit $scanExit
+                }
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish security reports
+            condition: always()
+            inputs:
+              targetPath: '$(ReportDir)'
+              artifact: 'terraform-security-reports'
+              publishLocation: pipeline
