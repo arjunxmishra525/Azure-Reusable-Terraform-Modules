@@ -81,7 +81,7 @@ stages:
             displayName: Tool Checkout
             inputs:
              targetType: inline
-             pwsh: true
+             pwsh: false
              script: |
               $ErrorActionPreference = "Stop"
 
