@@ -1,5 +1,8 @@
 variable "RG" {
-
+  type = map(object({
+    name     = string
+    location = string
+  }))
   validation {
     condition = alltrue([
       for arjun in values(var.RG) :
@@ -84,13 +87,13 @@ variable "vm" {
 }
 
 variable "admin_username" {
-  type    = string
-  default = "arjunmishra"
+  type = string
+  # default = "arjunmishra"
 }
 variable "admin_password" {
-  type = string
-  # sensitive = true
-  default = "Arjunmishra@20"
+  type      = string
+  sensitive = true
+  # default = "Arjunmishra@20"
 }
 
 variable "key_vault" {

@@ -102,7 +102,7 @@ vm = {
 
 key_vault = {
   key_vault_secret1 = {
-    name                = "adminusername"
+    name                = "adminusername1"
     value               = "arjunfrontendvm"
     key_vault_name      = "pipelinekeyvaultG103"
     resource_group_name = "backend_pipeline"
