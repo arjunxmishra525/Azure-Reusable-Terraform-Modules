@@ -1,4 +1,4 @@
-variable "key_vault" {
-  type = map(any)
-}
+# variable "key_vault" {
+#   type = map(any)
+# }
 

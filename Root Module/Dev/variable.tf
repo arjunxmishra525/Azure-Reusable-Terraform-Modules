@@ -95,9 +95,9 @@ variable "admin_password" {
   # default = "Arjunmishra@20"
 }
 
-variable "key_vault" {
-  type = map(any)
-}
+# variable "key_vault" {
+#   type = map(any)
+# }
 
 variable "dns_zone" {
   type = map(object({

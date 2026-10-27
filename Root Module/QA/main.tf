@@ -48,11 +48,11 @@ module "azurerm_linux_virtual_machine" {
   admin_username = var.admin_username
 }
 
-module "key_vault" {
-  source    = "../../Child Module/azurerm_key_vault_secret"
-  key_vault = var.key_vault
+# module "key_vault" {
+#   source    = "../../Child Module/azurerm_key_vault_secret"
+#   key_vault = var.key_vault
 
-}
+# }
 module "dns_zone" {
   depends_on = [module.resource_group]
   source     = "../../Child Module/azurerm_DNS_ZONE"

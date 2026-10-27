@@ -100,22 +100,22 @@ vm = {
   }
 }
 
-key_vault = {
-  key_vault_secret1 = {
-    name                = "adminusername"
-    value               = "arjunfrontendvm"
-    key_vault_name      = "pipelinekeyvaultG103"
-    resource_group_name = "backend_pipeline"
+# key_vault = {
+#   key_vault_secret1 = {
+#     name                = "adminusername"
+#     value               = "arjunfrontendvm"
+#     key_vault_name      = "pipelinekeyvaultG103"
+#     resource_group_name = "backend_pipeline"
 
-  }
+#   }
 
-  key_vault_secret2 = {
-    name                = "adminpassword1"
-    value               = "Arjunmishra@20"
-    key_vault_name      = "pipelinekeyvaultG103"
-    resource_group_name = "backend_pipeline"
-  }
-}
+#   key_vault_secret2 = {
+#     name                = "adminpassword1"
+#     value               = "Arjunmishra@20"
+#     key_vault_name      = "pipelinekeyvaultG103"
+#     resource_group_name = "backend_pipeline"
+#   }
+# }
 
 dns_zone = {
   "dns_zone1" = {
