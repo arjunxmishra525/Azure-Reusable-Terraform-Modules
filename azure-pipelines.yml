@@ -22,10 +22,8 @@ variables:
       - group: vg-qa
   - ${{ if eq(parameters.env, 'prod') }}:
       - group: vg-prod
-
-
-
-
+      
+  - group: vm-credentials
 
   - name: wd
     value: '$(Build.SourcesDirectory)/Root Module/${{ parameters.env }}'
