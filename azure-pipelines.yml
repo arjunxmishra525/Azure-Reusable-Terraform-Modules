@@ -183,8 +183,8 @@ stages:
               environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
 # Variable Ftech from Keyvault at runtime
             env:
-                  TF_VAR_admin_username: $(adminusername1)
-                  TF_VAR_admin_password: $(adminpassword1)
+                  TF_VAR_admin_username: $(anqit-username)
+                  TF_VAR_admin_password: $(anqit-password)
 
   - stage: Approval
     displayName: 'Approval Req'
@@ -230,8 +230,8 @@ stages:
               environmentServiceNameAzureRM: 'Arjun-CI/CD-PIPELINE'
 # Variable Ftech from Keyvault at runtime
             env:
-                  TF_VAR_admin_username: $(adminusername1)
-                  TF_VAR_admin_password: $(adminpassword1)
+                  TF_VAR_admin_username: $(anqit-username)
+                  TF_VAR_admin_password: $(anqit-password)
             
           - task: TerraformTask@5
             displayName: 'Deployment start'
