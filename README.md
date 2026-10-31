@@ -238,24 +238,6 @@ In `variable.tf`, custom validation blocks prevent common configuration mistakes
 
 ---
 
-## 🛠 Areas for Improvement & Known Quirks
-
-While this codebase is functional, here are a few practical refactoring recommendations for ongoing maintenance:
-
-1. **Path Casing on Linux runners:**
-   - In `Root Module/Dev/main.tf`, some module sources are written as `../../Child module/...` while others use `../../Child Module/...`.
-   - On Windows, this works fine because NTFS is case-insensitive. But on Linux self-hosted agents or GitHub Actions, this will fail. Standardize all paths to lowercase (`../../Child module/...` or rename to `modules/`).
-2. **Folder Names with Spaces:**
-   - Renaming `"Child module"` to `modules` and `"Root Module"` to `environments` eliminates the need for quotes in bash and PowerShell scripts.
-3. **Module Outputs vs Data Sources:**
-   - Currently, downstream modules (like NIC and VM) look up resources using `data "azurerm_subnet"` or `data "azurerm_network_interface"` by name.
-   - *Better practice:* Add `outputs.tf` to child modules (e.g., outputting the subnet ID) and pass the ID directly (`subnet_id = module.subnet.id`). This removes extra Azure API lookups and avoids having to add manual `depends_on = [...]` blocks.
-4. **Backend State Key in QA/Prod `Provider.tf`:**
-   - `QA/Provider.tf` and `Prod/Provider.tf` currently have `key = "dev.terraform.tfstate"` written in the file. The Azure DevOps pipeline overrides this dynamically with `backendAzureRmKey: '$(key)'`, but updating the files themselves prevents accidental state collisions when running locally.
-5. **DRY (Don't Repeat Yourself) Root Modules:**
-   - `Dev`, `QA`, and `Prod` currently duplicate `main.tf` and `variable.tf`. A cleaner long-term pattern is to have one single root module and use environment-specific `.tfvars` files (`terraform plan -var-file="dev.tfvars"`).
-
----
 
 ## 📄 License
 
