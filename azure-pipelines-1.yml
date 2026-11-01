@@ -1,8 +1,7 @@
 trigger: 
  branches:
    include:
-     - main
-     - feature/*
+     - none
 
 pool:      
    arjun
@@ -15,3 +14,35 @@ parameters:
       - dev
       - qa
       - prod
+
+variables:
+ - ${{if eq(parameters.env,'dev')}} :
+    - group: vg-dev-1
+
+ - ${{if eq(parameters.env,'prod')}} :
+    - group: vg-prod-1
+
+ - ${{if eq(parameters.env,'qa')}} :
+    - group: vg-qa-1
+
+ -  name: wd
+    value: '$(Build.SourcesDirectory)/Root Module/$(parameters.env)'
+
+
+stages:
+  - stage: 
+    displayName: Init
+    jobs:
+      - job: 
+        displayName: Init
+        steps:
+           - task: TerraformTask@5
+             inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(wd)'
+              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+              backendAzureRmResourceGroupName: '$(resource_group_name)'   
+              backendAzureRmStorageAccountName: '$(storage_account_name)'
+              backendAzureRmContainerName: '$(container_name)'
+              backendAzureRmKey: '$(key)'
