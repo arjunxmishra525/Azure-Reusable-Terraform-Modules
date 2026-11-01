@@ -36,9 +36,16 @@ stages:
       - job: 
         displayName: Init
         steps:
-         - script: 
-             terraform init
-           workingDirectory: $(wd)
+          - task: TerraformTask@5
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(wd)'
+              backendServiceArm: 'Arjun-CI/CD-PIPELINE'
+              backendAzureRmResourceGroupName: '$(resource_group_name)'
+              backendAzureRmStorageAccountName: '$(container_name)'
+              backendAzureRmContainerName: '$(container_name)'
+              backendAzureRmKey: '$(key)'
            
           
           
