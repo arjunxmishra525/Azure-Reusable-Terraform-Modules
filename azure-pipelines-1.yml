@@ -40,7 +40,7 @@ stages:
              inputs:
               provider: 'azurerm'
               command: 'init'
-              workingDirectory: '$(wd)'
+              workingDirectory: $(wd)
               backendServiceArm: 'Arjun-CI/CD-PIPELINE'
               backendAzureRmResourceGroupName: '$(resource_group_name)'   
               backendAzureRmStorageAccountName: '$(storage_account_name)'
