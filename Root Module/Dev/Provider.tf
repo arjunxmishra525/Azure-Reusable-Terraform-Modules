@@ -12,7 +12,7 @@ terraform {
    # storage_account_name = "pipelinestorageaccount13"
    # container_name       = "arjun-tfstate"
    # key                  = "dev.terraform.tfstate"
- # }
+  }
 }
 
 provider "azurerm" {
