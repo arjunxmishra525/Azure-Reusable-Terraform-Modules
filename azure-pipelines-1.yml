@@ -8,12 +8,12 @@ pool:
 
 parameters:
   - name: env
-    default: dev
+    default: Dev
     type: string
     values:
-      - dev
-      - qa
-      - prod
+      - Dev
+      - Prod
+      - QA
 
 variables:
  - ${{if eq(parameters.env,'dev')}} :
