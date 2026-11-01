@@ -8,11 +8,11 @@ terraform {
   }
 
   backend "azurerm" {
-    resource_group_name  = "backend_pipeline"
-    storage_account_name = "pipelinestorageaccount13"
-    container_name       = "arjun-tfstate"
-    key                  = "dev.terraform.tfstate"
-  }
+   # resource_group_name  = "backend_pipeline"
+   # storage_account_name = "pipelinestorageaccount13"
+   # container_name       = "arjun-tfstate"
+   # key                  = "dev.terraform.tfstate"
+ # }
 }
 
 provider "azurerm" {
